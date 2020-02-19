@@ -1,4 +1,4 @@
-package no.ssb.dapla.storage.gcs;
+package no.ssb.dapla.storage.client.backend.gcs;
 
 import com.google.cloud.ReadChannel;
 
@@ -12,7 +12,7 @@ import java.util.TreeMap;
 /**
  * Implements {@link SeekableByteChannel} over {@link ReadChannel}.
  */
-public class SeekableReadChannel implements java.nio.channels.SeekableByteChannel {
+public class SeekableReadChannel implements SeekableByteChannel {
 
     private final Map<Long, ByteBuffer> buffers = new TreeMap<>();
     private final ReadChannel delegate;
@@ -74,7 +74,7 @@ public class SeekableReadChannel implements java.nio.channels.SeekableByteChanne
     }
 
     @Override
-    public java.nio.channels.SeekableByteChannel position(long newPosition) {
+    public SeekableByteChannel position(long newPosition) {
         pos = newPosition;
         return this;
     }
@@ -85,7 +85,7 @@ public class SeekableReadChannel implements java.nio.channels.SeekableByteChanne
     }
 
     @Override
-    public java.nio.channels.SeekableByteChannel truncate(long size) {
+    public SeekableByteChannel truncate(long size) {
         throw new NonWritableChannelException();
     }
 

@@ -1,4 +1,4 @@
-package no.ssb.dapla.storage.gcs;
+package no.ssb.dapla.storage.client.backend.gcs;
 
 import com.google.api.gax.paging.Page;
 import com.google.cloud.ReadChannel;

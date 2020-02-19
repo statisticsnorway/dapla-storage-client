@@ -1,4 +1,4 @@
-package no.ssb.dapla.storage.hadoop;
+package no.ssb.dapla.storage.client.backend.hadoop;
 
 import io.reactivex.Flowable;
 import no.ssb.dapla.storage.client.BinaryBackend;

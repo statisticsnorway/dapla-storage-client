@@ -1,32 +1,16 @@
 [![Build Status](https://drone.prod-bip-ci.ssb.no/api/badges/statisticsnorway/dapla-storage/status.svg)](https://drone.prod-bip-ci.ssb.no/statisticsnorway/dapla-storage)
 
-# Dapla storage
+# Dapla storage client
 
 Streams data from and to bucket storage
 
-## Modules
-
-The project is composed of the following modules; 
-
-1. dapla-storage-client. The main modules, it contains the StorageClient class that can be used to write and read data.
-2. dapla-storage-gcs. Backend implementation for Google Cloud Storage. 
-3. dapla-storage-hadoop. Backend implementation for Hadoop fs.
-
 ## Usage
 
-Add the desired modules to your project:  
-
-```
+```xml
 <dependency>
     <groupId>no.ssb.dapla.storage</groupId>
     <artifactId>dapla-storage-client</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
-</dependency>
-
-<dependency>
-    <groupId>no.ssb.dapla.storage</groupId>
-    <artifactId>dapla-storage-gcs</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>0.0.1-SNAPSHOT</version>v
 </dependency>
 ```
 
@@ -48,9 +32,4 @@ client = StorageClient.builder()
         .withConfiguration(clientConfiguration)
         .withFormatConverters(/* ... */)
         .build();
-
 ```
-
-## Class diagram
-
-![Class diagram](http://www.plantuml.com/plantuml/proxy?src=https://raw.githubusercontent.com/statisticsnorway/dapla-storage/master/doc/class-diagram.puml)
