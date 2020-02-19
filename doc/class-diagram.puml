@@ -2,7 +2,7 @@
 
 hide empty members
 
-package "LDS Data Client" {
+package "Dapla storage" {
 
   interface BinaryBackend {
     +read(path)
@@ -17,7 +17,7 @@ package "LDS Data Client" {
     +write(records, output, mime, schema)
   }
 
-  class DataClient {
+  class StorageClient {
     -configuration
     +readData()
     +writeData()
@@ -25,22 +25,22 @@ package "LDS Data Client" {
     +writeAndConvert()
   }
 
-  DataClient *-- BinaryBackend
-  DataClient *-- FormatConverter
+  StorageClient *-- BinaryBackend
+  StorageClient *-- FormatConverter
 
   CsvConverter -up-|> FormatConverter
   JsonConverter -up-|> FormatConverter
 }
 
-package "LDS Data Hadoop" {
+package "Dapla Hadoop" {
   class HadoopBackend
 }
 
-package "LDS Data GCS" {
+package "Dapla GCS" {
   class GoogleCloudStorageBackend
 }
 
-HadoopBackend --|> BinaryBackend
+"Dapla Hadoop" --|> BinaryBackend
 GoogleCloudStorageBackend --|> BinaryBackend
 
 @enduml
