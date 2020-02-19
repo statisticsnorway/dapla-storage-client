@@ -6,7 +6,7 @@ Streams data from and to bucket storage
 
 The project is composed of the following modules; 
 
-1. dapla-storage-client. The main modules, it contains the DataClient class that can be used to write and read data.
+1. dapla-storage-client. The main modules, it contains the StorageClient class that can be used to write and read data.
 2. dapla-storage-gcs. Backend implementation for Google Cloud Storage. 
 3. dapla-storage-hadoop. Backend implementation for Hadoop fs.
 
