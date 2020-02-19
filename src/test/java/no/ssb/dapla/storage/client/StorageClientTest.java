@@ -65,17 +65,17 @@ public class StorageClientTest {
     void testWithCursor() throws IOException {
 
         Flowable<GenericRecord> records = generateRecords(1000);
-        client.writeAllData("test", DIMENSIONAL_SCHEMA, records, "").blockingAwait();
+        client.writeAllData("test", DIMENSIONAL_SCHEMA, records).blockingAwait();
 
 
-        ParquetMetadata metadata = client.readMetadata("test", "token");
+        ParquetMetadata metadata = client.readMetadata("test");
         Long size = 0L;
         for (BlockMetaData block : metadata.getBlocks()) {
             size += block.getRowCount();
         }
 
         Single<GenericRecord> last = client.readData("test", DIMENSIONAL_SCHEMA,
-                "token", new Cursor<>(1, size - 1)
+                new Cursor<>(1, size - 1)
         ).firstOrError();
 
         GenericRecord genericRecord = last.blockingGet();
@@ -99,8 +99,8 @@ public class StorageClientTest {
     void testReadWRite() {
 
         Flowable<GenericRecord> records = generateRecords(100);
-        client.writeAllData("test", DIMENSIONAL_SCHEMA, records, "").blockingAwait();
-        List<GenericRecord> readRecords = client.readData("test", DIMENSIONAL_SCHEMA, "", null)
+        client.writeAllData("test", DIMENSIONAL_SCHEMA, records).blockingAwait();
+        List<GenericRecord> readRecords = client.readData("test", DIMENSIONAL_SCHEMA, null)
                 .toList().blockingGet();
 
         assertThat(readRecords)
@@ -146,8 +146,7 @@ public class StorageClientTest {
                 recordFlowable,
                 1,
                 TimeUnit.MINUTES,
-                10,
-                ""
+                10
         );
 
         List<Long> positions = feedBack.map(positionedRecord -> positionedRecord.getPosition()).toList().blockingGet();

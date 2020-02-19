@@ -70,16 +70,14 @@ public class StorageClient {
      * @param schema    the schema used to parse the data.
      * @param input     the binary data.
      * @param mediaType the media type of the binary data.
-     * @param token     an authentication token.
      * @return a completable that completes once the data is saved.
      * @throws UnsupportedMediaTypeException if the client does not support the media type.
      */
-    public Completable convertAndWrite(String dataId, Schema schema, InputStream input, String mediaType,
-                                       String token) throws UnsupportedMediaTypeException {
+    public Completable convertAndWrite(String dataId, Schema schema, InputStream input, String mediaType) throws UnsupportedMediaTypeException {
         for (FormatConverter converter : converters) {
             if (converter.doesSupport(mediaType)) {
                 Flowable<GenericRecord> records = converter.read(input, mediaType, schema);
-                return writeAllData(dataId, schema, records, token);
+                return writeAllData(dataId, schema, records);
             }
         }
         throw new UnsupportedMediaTypeException("unsupported type " + mediaType);
@@ -92,20 +90,18 @@ public class StorageClient {
      * @param schema       the schema used to parse the data.
      * @param outputStream the output stream to read the data into.
      * @param mediaType    the media type of the binary data.
-     * @param token        an authentication token.
      * @return a completable that completes once the data is read.
      * @throws UnsupportedMediaTypeException if the client does not support the media type.
      */
-    public Completable readAndConvert(String dataId, Schema schema, OutputStream outputStream,
-                                      String mediaType, String token) throws UnsupportedMediaTypeException {
-        return readAndConvert(dataId, schema, outputStream, mediaType, token, null);
+    public Completable readAndConvert(String dataId, Schema schema, OutputStream outputStream, String mediaType) throws UnsupportedMediaTypeException {
+        return readAndConvert(dataId, schema, outputStream, mediaType, null);
     }
 
     public Completable readAndConvert(String dataId, Schema schema, OutputStream outputStream,
-                                      String mediaType, String token, Cursor<Long> cursor) throws UnsupportedMediaTypeException {
+                                      String mediaType, Cursor<Long> cursor) throws UnsupportedMediaTypeException {
         for (FormatConverter converter : converters) {
             if (converter.doesSupport(mediaType)) {
-                Flowable<GenericRecord> records = readData(dataId, schema, token, cursor);
+                Flowable<GenericRecord> records = readData(dataId, schema, cursor);
                 return converter.write(records, outputStream, mediaType, schema);
             }
         }
@@ -126,11 +122,14 @@ public class StorageClient {
      * @return an {@link Observable} emitting the last record in each batch.
      */
     public <R extends GenericRecord> Observable<R> writeDataUnbounded(
-            Supplier<String> idSupplier, Schema schema, Flowable<R> records, long timeWindow, TimeUnit unit, long countWindow,
-            String token) {
-        return records.window(timeWindow, unit, countWindow, true).switchMapMaybe(recordsWindow -> {
-            return writeData(idSupplier.get(), schema, recordsWindow, token).lastElement();
-        }).toObservable();
+            Supplier<String> idSupplier, Schema schema, Flowable<R> records, long timeWindow, TimeUnit unit, long countWindow
+    ) {
+        return records
+                .window(timeWindow, unit, countWindow, true)
+                .switchMapMaybe(
+                        recordsWindow -> writeData(idSupplier.get(), schema, recordsWindow).lastElement()
+                )
+                .toObservable();
     }
 
     /**
@@ -139,11 +138,10 @@ public class StorageClient {
      * @param dataId  an opaque identifier for the data.
      * @param schema  the schema used to create the records.
      * @param records the records to write.
-     * @param token   an authentication token.
      * @return a completable that completes once the data is saved.
      */
-    public Completable writeAllData(String dataId, Schema schema, Flowable<GenericRecord> records, String token) {
-        return writeData(dataId, schema, records, token).ignoreElements();
+    public Completable writeAllData(String dataId, Schema schema, Flowable<GenericRecord> records) {
+        return writeData(dataId, schema, records).ignoreElements();
     }
 
     /**
@@ -152,12 +150,11 @@ public class StorageClient {
      * @param dataId  an opaque identifier for the data.
      * @param schema  the schema used to create the records.
      * @param records the records to write.
-     * @param token   an authentication token.
      * @return a completable that completes once the data is saved.
      */
-    public <R extends GenericRecord> Flowable<R> writeData(String dataId, Schema schema, Flowable<R> records, String token) {
+    public <R extends GenericRecord> Flowable<R> writeData(String dataId, Schema schema, Flowable<R> records) {
         return Flowable.defer(() -> {
-            DataWriter writer = writeData(dataId, schema, token);
+            DataWriter writer = new DataWriter(dataId, schema);
             return records.doAfterNext(writer::save)
                     .doOnComplete(writer::close)
                     .doOnError(throwable -> writer.cancel());
@@ -165,32 +162,14 @@ public class StorageClient {
     }
 
     /**
-     * Create a {@link DataWriter}
-     * <p>
-     * {@link DataWriter}s can be used to write data in a sequential manner. Buffering is then delegated to the
-     * parquet layer. Remember to close all instances.
-     *
-     * @param dataId an opaque identifier for the data.
-     * @param schema the schema used to create the records.
-     * @param token  an authentication token.
-     * @return an instance of {@link DataWriter} ready to accept records.
-     * @throws IOException if any I/O errors occurs.
-     */
-    public DataWriter writeData(String dataId, Schema schema, String token) throws IOException {
-        return new DataWriter(dataId, schema);
-    }
-
-    /**
      * Read a sequence of {@link GenericRecord}s from the bucket storage.
      *
      * @param dataId the identifier for the data.
      * @param schema the schema used to create the records.
-     * @param token  an authentication token.
      * @param cursor a cursor on record number.
      * @return a {@link Flowable} of records.
      */
-    public Flowable<GenericRecord> readData(String dataId, Schema schema, String token, Cursor<Long> cursor) {
-        // TODO: Do something with token.
+    public Flowable<GenericRecord> readData(String dataId, Schema schema, Cursor<Long> cursor) {
         // TODO: Handle projection.
         // TODO: Handle filtering.
         if (cursor != null) {
@@ -223,7 +202,7 @@ public class StorageClient {
         });
     }
 
-    public ParquetMetadata readMetadata(String dataId, String token) throws IOException {
+    public ParquetMetadata readMetadata(String dataId) throws IOException {
         String path = configuration.getLocation() + dataId;
         try (SeekableByteChannel channel = backend.read(path)) {
             ParquetFileReader parquetFileReader = provider.getMetadata(channel);
