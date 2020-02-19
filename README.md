@@ -51,4 +51,4 @@ client = StorageClient.builder()
 
 ## Class diagram
 
-![Class diagram](http://www.plantuml.com/plantuml/proxy?src=https://raw.githubusercontent.com/statisticsnorway/dapla-storage/master/dapla-storage/doc/class-diagram.puml)
+![Class diagram](http://www.plantuml.com/plantuml/proxy?src=https://raw.githubusercontent.com/statisticsnorway/dapla-storage/master/doc/class-diagram.puml)
