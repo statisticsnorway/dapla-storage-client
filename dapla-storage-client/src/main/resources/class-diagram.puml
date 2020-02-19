@@ -1,0 +1,46 @@
+@startuml
+
+hide empty members
+
+package "LDS Data Client" {
+
+  interface BinaryBackend {
+    +read(path)
+    +write(path)
+    +list(path)
+    +delete(path)
+  }
+
+  interface FormatConverter {
+    +doesSupport(mime)
+    +read(input, mime, schema)
+    +write(records, output, mime, schema)
+  }
+
+  class DataClient {
+    -configuration
+    +readData()
+    +writeData()
+    +readAndConvert()
+    +writeAndConvert()
+  }
+
+  DataClient *-- BinaryBackend
+  DataClient *-- FormatConverter
+
+  CsvConverter -up-|> FormatConverter
+  JsonConverter -up-|> FormatConverter
+}
+
+package "LDS Data Hadoop" {
+  class HadoopBackend
+}
+
+package "LDS Data GCS" {
+  class GoogleCloudStorageBackend
+}
+
+HadoopBackend --|> BinaryBackend
+GoogleCloudStorageBackend --|> BinaryBackend
+
+@enduml
