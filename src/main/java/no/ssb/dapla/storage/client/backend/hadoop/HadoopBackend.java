@@ -1,7 +1,7 @@
 package no.ssb.dapla.storage.client.backend.hadoop;
 
 import io.reactivex.Flowable;
-import no.ssb.dapla.storage.client.BinaryBackend;
+import no.ssb.dapla.storage.client.backend.BinaryBackend;
 import org.apache.hadoop.fs.ByteBufferReadable;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;

@@ -1,6 +1,7 @@
-package no.ssb.dapla.storage.client;
+package no.ssb.dapla.storage.client.backend.local;
 
 import io.reactivex.Flowable;
+import no.ssb.dapla.storage.client.backend.BinaryBackend;
 
 import java.io.File;
 import java.io.FileInputStream;

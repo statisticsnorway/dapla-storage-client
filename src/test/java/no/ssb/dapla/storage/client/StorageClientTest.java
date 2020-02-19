@@ -3,6 +3,7 @@ package no.ssb.dapla.storage.client;
 import io.reactivex.Flowable;
 import io.reactivex.Observable;
 import io.reactivex.Single;
+import no.ssb.dapla.storage.client.backend.local.LocalBackend;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;

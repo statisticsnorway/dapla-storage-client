@@ -10,7 +10,7 @@ import com.google.cloud.storage.CopyWriter;
 import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageOptions;
 import io.reactivex.Flowable;
-import no.ssb.dapla.storage.client.BinaryBackend;
+import no.ssb.dapla.storage.client.backend.BinaryBackend;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;

@@ -3,6 +3,7 @@ package no.ssb.dapla.storage.client;
 import io.reactivex.Completable;
 import io.reactivex.Flowable;
 import io.reactivex.Observable;
+import no.ssb.dapla.storage.client.backend.BinaryBackend;
 import no.ssb.dapla.storage.client.converters.CsvConverter;
 import no.ssb.dapla.storage.client.converters.FormatConverter;
 import no.ssb.dapla.storage.client.converters.JsonConverter;

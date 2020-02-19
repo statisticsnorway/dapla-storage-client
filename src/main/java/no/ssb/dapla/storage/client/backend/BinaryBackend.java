@@ -1,4 +1,4 @@
-package no.ssb.dapla.storage.client;
+package no.ssb.dapla.storage.client.backend;
 
 import io.reactivex.Flowable;
 
