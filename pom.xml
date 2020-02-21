@@ -4,13 +4,13 @@
 
     <groupId>no.ssb.dapla.storage</groupId>
     <artifactId>dapla-storage-client</artifactId>
-    <version>0.0.1</version>
+    <version>0.0.2-SNAPSHOT</version>
 
     <scm>
         <connection>scm:git:git://github.com/statisticsnorway/dapla-storage-client.git</connection>
         <developerConnection>scm:git:git@github.com:statisticsnorway/dapla-storage-client.git</developerConnection>
         <url>https://github.com/statisticsnorway/dapla-storage-client</url>
-        <tag>dapla-storage-client-0.0.1</tag>
+        <tag>HEAD</tag>
     </scm>
 
     <dependencies>
