@@ -1,4 +1,4 @@
-[![Build Status](https://drone.prod-bip-ci.ssb.no/api/badges/statisticsnorway/dapla-storage/status.svg)](https://drone.prod-bip-ci.ssb.no/statisticsnorway/dapla-storage)
+[![Build Status](https://drone.prod-bip-ci.ssb.no/api/badges/statisticsnorway/dapla-storage-client/status.svg)](https://drone.prod-bip-ci.ssb.no/statisticsnorway/dapla-storage-client)
 
 # Dapla storage client
 
@@ -10,7 +10,7 @@ Streams data from and to bucket storage
 <dependency>
     <groupId>no.ssb.dapla.storage</groupId>
     <artifactId>dapla-storage-client</artifactId>
-    <version>0.0.1-SNAPSHOT</version>v
+    <version>0.0.1</version>
 </dependency>
 ```
 
