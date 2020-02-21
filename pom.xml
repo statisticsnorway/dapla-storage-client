@@ -8,6 +8,13 @@
     <artifactId>dapla-storage-client</artifactId>
     <version>0.0.1-SNAPSHOT</version>
 
+    <scm>
+        <connection>scm:git:git://github.com/statisticsnorway/dapla-storage-client.git</connection>
+        <developerConnection>scm:git:git@github.com:statisticsnorway/dapla-storage-client.git</developerConnection>
+        <url>https://github.com/statisticsnorway/dapla-storage-client</url>
+        <tag>HEAD</tag>
+    </scm>
+
     <dependencies>
 
         <dependency>
