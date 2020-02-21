@@ -12,3 +12,4 @@ out/
 .settings
 .classpath
 dependency-reduced-pom.xml
+storage-client-local-storage/
