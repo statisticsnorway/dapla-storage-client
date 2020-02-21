@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 /**
@@ -156,7 +157,8 @@ public class StorageClient {
     public <R extends GenericRecord> Flowable<R> writeData(String dataId, Schema schema, Flowable<R> records) {
         return Flowable.defer(() -> {
             DataWriter writer = new DataWriter(dataId, schema);
-            return records.doAfterNext(writer::save)
+            return records
+                    .doAfterNext(writer::write)
                     .doOnComplete(writer::close)
                     .doOnError(throwable -> writer.cancel());
         });
@@ -267,13 +269,13 @@ public class StorageClient {
     }
 
     /**
-     * Writer abstraction.
+     * Offers read, write and delete operations on records.
      */
     public class DataWriter implements AutoCloseable {
         private final String tmpPath;
         private final String path;
         private final ParquetWriter<GenericRecord> parquetWriter;
-
+        private final AtomicInteger writeCounter = new AtomicInteger(0);
 
         private DataWriter(String datasetId, Schema schema) throws IOException {
             path = configuration.getLocation() + datasetId;
@@ -283,14 +285,15 @@ public class StorageClient {
         }
 
         /**
-         * Push down a generic record.
+         * Write a record to storage as a parquet file.
          * <p>
-         * Note that the record might be buffered. Calling {@link #close()} after this method
-         * guaranties that the given record is written.
+         * Note: The record might be buffered. {@link #close()} must be called afterwards to ensure all buffered records
+         * are persisted.
          *
          * @param record the record to save.
          */
-        public void save(GenericRecord record) throws IOException {
+        public void write(GenericRecord record) throws IOException {
+            writeCounter.incrementAndGet();
             parquetWriter.write(record);
         }
 
@@ -303,13 +306,21 @@ public class StorageClient {
         }
 
         /**
-         * Write all buffered records, close the file and rename it.
+         * Write all buffered records.
          */
         @Override
         public void close() throws IOException {
             try {
                 parquetWriter.close();
-                backend.move(tmpPath, path);
+                if (writeCounter.get() > 0) {
+                    // Remove .tmp suffix from the file since at least one record has been written to it
+                    backend.move(tmpPath, path);
+                } else {
+                    // Delete the file since no records have been written to it
+                    backend.delete(tmpPath);
+                    writeCounter.set(0);
+                }
+
             } catch (IOException ioe) {
                 try {
                     cancel();

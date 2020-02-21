@@ -37,7 +37,6 @@ public class StorageClientTest {
     ));
 
     private StorageClient client;
-    private String prefix;
     private GenericRecordBuilder recordBuilder;
 
     @BeforeEach
@@ -49,18 +48,16 @@ public class StorageClientTest {
 
         StorageClient.Configuration clientConfiguration = new StorageClient.Configuration();
 
-        prefix = Files.createTempDirectory("lds-data-client").toString();
-        clientConfiguration.setLocation(prefix);
+        Files.createTempDirectory("storage-client-local-storage");
+        clientConfiguration.setLocation("storage-client-local-storage/");
 
         client = StorageClient.builder()
                 .withParquetProvider(new ParquetProvider(parquetConfiguration))
-                .withBinaryBackend(new LocalBackend(prefix))
+                .withBinaryBackend(new LocalBackend())
                 .withConfiguration(clientConfiguration)
                 .build();
         recordBuilder = new GenericRecordBuilder(DIMENSIONAL_SCHEMA);
     }
-
-
 
     @Test
     void testWithCursor() throws IOException {
@@ -134,12 +131,18 @@ public class StorageClientTest {
         });
 
         // Convert to record that contains extra information.
-        Flowable<PositionedRecord> recordFlowable = unlimitedFlowable.map(income -> {
-            GenericData.Record record = recordBuilder.set("string", income.toString()).set("int", income)
-                    .set("boolean", income % 2 == 0).set("float", income / 2).set("long", income)
-                    .set("double", income / 2).build();
-            return new PositionedRecord(record, income / 10);
-        });
+        Flowable<PositionedRecord> recordFlowable = unlimitedFlowable.map(
+                income -> {
+                    GenericData.Record record = recordBuilder
+                            .set("string", income.toString())
+                            .set("int", income)
+                            .set("boolean", income % 2 == 0)
+                            .set("float", income / 2).set("long", income)
+                            .set("double", income / 2)
+                            .build();
+                    return new PositionedRecord(record, income / 10);
+                }
+        );
 
         Observable<PositionedRecord> feedBack = client.writeDataUnbounded(
                 () -> "testUnbounded" + System.currentTimeMillis(),
@@ -155,7 +158,6 @@ public class StorageClientTest {
         assertThat(positions).containsExactlyElementsOf(
                 Stream.iterate(1L, t -> t + 1).limit(50).collect(Collectors.toList())
         );
-
     }
 
     private static class PositionedRecord implements GenericRecord {
