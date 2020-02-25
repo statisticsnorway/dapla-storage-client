@@ -34,7 +34,7 @@ public class SeekableReadChannel implements SeekableByteChannel {
         chunk.limit(Math.min(dst.remaining(), chunk.remaining()));
         dst.put(chunk);
         pos += chunk.position();
-        return pos >= size ? -1 : chunk.position();
+        return pos > size ? -1 : chunk.position();
     }
 
     private Long chunkPosition(long pos) {
