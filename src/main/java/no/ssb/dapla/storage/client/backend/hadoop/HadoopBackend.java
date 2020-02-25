@@ -2,6 +2,7 @@ package no.ssb.dapla.storage.client.backend.hadoop;
 
 import io.reactivex.Flowable;
 import no.ssb.dapla.storage.client.backend.BinaryBackend;
+import no.ssb.dapla.storage.client.backend.FileInfo;
 import org.apache.hadoop.fs.ByteBufferReadable;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
@@ -11,6 +12,7 @@ import org.apache.hadoop.fs.Path;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SeekableByteChannel;
+import java.util.Comparator;
 
 public class HadoopBackend implements BinaryBackend {
 
@@ -21,7 +23,7 @@ public class HadoopBackend implements BinaryBackend {
     }
 
     @Override
-    public Flowable<String> list(String path) throws IOException {
+    public Flowable<FileInfo> list(String path, Comparator<FileInfo>... comparators) throws IOException {
         return null;
     }
 

@@ -11,6 +11,7 @@ import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageOptions;
 import io.reactivex.Flowable;
 import no.ssb.dapla.storage.client.backend.BinaryBackend;
+import no.ssb.dapla.storage.client.backend.FileInfo;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -19,6 +20,7 @@ import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SeekableByteChannel;
 import java.util.Comparator;
+import java.util.List;
 
 /**
  * A simple BinaryBackend for Google Cloud Storage.
@@ -29,28 +31,37 @@ public class GoogleCloudStorageBackend implements BinaryBackend {
     private final Integer writeChunkSize;
     private final Integer readChunkSize;
 
+    public GoogleCloudStorageBackend() {
+        this(new Configuration()
+          .setWriteChunkSize(128 * 1024 * 1024)
+          .setReadChunkSize(128 * 1024 * 1024)
+        );
+    }
+
     public GoogleCloudStorageBackend(Configuration configuration) {
         this.storage = StorageOptions.getDefaultInstance().getService();
         this.writeChunkSize = configuration.getWriteChunkSize();
         this.readChunkSize = configuration.getReadChunkSize();
     }
 
-    private static String fuse(String start, String end) {
-        for (int i = 0; i < start.length(); i++) {
-            if (end.startsWith(start.substring(i))) {
-                return start.substring(0, i) + end;
-            }
-        }
-        return start + end;
-    }
-
-    @Override
-    public Flowable<String> list(String path) throws IOException {
+    public Flowable<FileInfo> list(String path, Comparator<FileInfo>... comparators) throws IOException {
         BlobId id = getBlobId(path);
+        Comparator<FileInfo> comparator = List.of(comparators).stream()
+          .reduce(Comparator::thenComparing)
+          .orElse(Comparator.comparing(FileInfo::getPath));
+
         return Flowable.defer(() -> {
             Page<Blob> pages = storage.list(id.getBucket(), Storage.BlobListOption.prefix(id.getName()));
             return Flowable.fromIterable(pages.iterateAll());
-        }).map(blob -> String.format("gs://%s/%s",blob.getBucket(), blob.getName())).sorted(Comparator.reverseOrder());
+        })
+        .map(blob -> {
+            String filePath = String.format("gs://%s/%s", blob.getBucket(), blob.getName());
+            return new FileInfo(filePath)
+              .setLastModified(blob.getUpdateTime())
+              .setDirectory(blob.isDirectory()
+            );
+        })
+        .sorted(comparator);
     }
 
     @Override
@@ -149,23 +160,22 @@ public class GoogleCloudStorageBackend implements BinaryBackend {
         private Integer readChunkSize;
         private Integer writeChunkSize;
 
-        public Configuration() {
-        }
-
         public Integer getReadChunkSize() {
             return readChunkSize;
         }
 
-        public void setReadChunkSize(Integer readChunkSize) {
+        public Configuration setReadChunkSize(Integer readChunkSize) {
             this.readChunkSize = readChunkSize;
+            return this;
         }
 
         public Integer getWriteChunkSize() {
             return writeChunkSize;
         }
 
-        public void setWriteChunkSize(Integer writeChunkSize) {
+        public Configuration setWriteChunkSize(Integer writeChunkSize) {
             this.writeChunkSize = writeChunkSize;
+            return this;
         }
     }
 }

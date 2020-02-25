@@ -2,16 +2,20 @@ package no.ssb.dapla.storage.client;
 
 import io.reactivex.Completable;
 import io.reactivex.Flowable;
+import io.reactivex.Maybe;
 import io.reactivex.Observable;
 import no.ssb.dapla.storage.client.backend.BinaryBackend;
+import no.ssb.dapla.storage.client.backend.FileInfo;
 import no.ssb.dapla.storage.client.converters.CsvConverter;
 import no.ssb.dapla.storage.client.converters.FormatConverter;
 import no.ssb.dapla.storage.client.converters.JsonConverter;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.parquet.filter2.compat.FilterCompat;
 import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.ParquetWriter;
+import org.apache.parquet.hadoop.metadata.BlockMetaData;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
 
 import java.io.IOException;
@@ -19,8 +23,10 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.channels.SeekableByteChannel;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
@@ -124,14 +130,14 @@ public class StorageClient {
      * @return an {@link Observable} emitting the last record in each batch.
      */
     public <R extends GenericRecord> Observable<R> writeDataUnbounded(
-            Supplier<String> idSupplier, Schema schema, Flowable<R> records, long timeWindow, TimeUnit unit, long countWindow
+      Supplier<String> idSupplier, Schema schema, Flowable<R> records, long timeWindow, TimeUnit unit, long countWindow
     ) {
         return records
-                .window(timeWindow, unit, countWindow, true)
-                .switchMapMaybe(
-                        recordsWindow -> writeData(idSupplier.get(), schema, recordsWindow).lastElement()
-                )
-                .toObservable();
+          .window(timeWindow, unit, countWindow, true)
+          .switchMapMaybe(
+            recordsWindow -> writeData(idSupplier.get(), schema, recordsWindow).lastElement()
+          )
+          .toObservable();
     }
 
     /**
@@ -158,9 +164,9 @@ public class StorageClient {
         return Flowable.defer(() -> {
             DataWriter writer = new DataWriter(dataId, schema);
             return records
-                    .doAfterNext(writer::write)
-                    .doOnComplete(writer::close)
-                    .doOnError(throwable -> writer.cancel());
+              .doAfterNext(writer::write)
+              .doOnComplete(writer::close)
+              .doOnError(throwable -> writer.cancel());
         });
     }
 
@@ -189,9 +195,28 @@ public class StorageClient {
         }
     }
 
+    public Maybe<GenericRecord> readLatestRecord(String dataId, Schema schema) {
+        try {
+            return backend.list(pathTo(dataId), Comparator.comparing(FileInfo::getLastModified))
+              .filter(fileInfo -> !fileInfo.isDirectory())
+              .firstElement()
+              .map(fileInfo -> {
+                  ParquetMetadata metadata = readMetadata(fileInfo.getPath());
+                  Long size = 0L;
+                  for (BlockMetaData block : metadata.getBlocks()) {
+                      size += block.getRowCount();
+                  }
+
+                  return readData(fileInfo.getPath(), schema, new Cursor<>(1, size - 1)).firstElement().blockingGet();
+              });
+        } catch (IOException e) {
+            throw new RuntimeException("Unable to list dataset path " + pathTo(dataId), e);
+        }
+    }
+
     private Flowable<GenericRecord> readRecords(String dataId, Schema schema, FilterCompat.Filter filter) {
         return Flowable.generate(() -> {
-            SeekableByteChannel readableChannel = backend.read(configuration.getLocation() + dataId);
+            SeekableByteChannel readableChannel = backend.read(pathTo(dataId));
             return provider.getReader(readableChannel, schema, filter);
         }, (parquetReader, emitter) -> {
             GenericRecord read = parquetReader.read();
@@ -205,9 +230,14 @@ public class StorageClient {
         });
     }
 
+    /** Return the full path to data, including location as defined by {@link no.ssb.dapla.storage.client.StorageClient.Configuration} */
+    private String pathTo(String dataId) {
+        String rootPath = configuration.getLocation().replaceFirst("/*$", "");
+        return dataId.startsWith(rootPath) ? dataId : rootPath + "/" + dataId;
+    }
+
     public ParquetMetadata readMetadata(String dataId) throws IOException {
-        String path = configuration.getLocation() + dataId;
-        try (SeekableByteChannel channel = backend.read(path)) {
+        try (SeekableByteChannel channel = backend.read(pathTo(dataId))) {
             ParquetFileReader parquetFileReader = provider.getMetadata(channel);
             return parquetFileReader.getFooter();
         }
@@ -278,7 +308,7 @@ public class StorageClient {
         private final AtomicInteger writeCounter = new AtomicInteger(0);
 
         private DataWriter(String datasetId, Schema schema) throws IOException {
-            path = configuration.getLocation() + datasetId;
+            path = pathTo(datasetId);
             tmpPath = path + ".tmp";
             SeekableByteChannel channel = backend.write(tmpPath);
             parquetWriter = provider.getWriter(channel, schema);

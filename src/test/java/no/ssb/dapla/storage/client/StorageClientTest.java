@@ -3,6 +3,7 @@ package no.ssb.dapla.storage.client;
 import io.reactivex.Flowable;
 import io.reactivex.Observable;
 import io.reactivex.Single;
+import no.ssb.dapla.storage.client.backend.gcs.GoogleCloudStorageBackend;
 import no.ssb.dapla.storage.client.backend.local.LocalBackend;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
@@ -48,8 +49,10 @@ public class StorageClientTest {
 
         StorageClient.Configuration clientConfiguration = new StorageClient.Configuration();
 
-        Files.createTempDirectory("storage-client-local-storage");
-        clientConfiguration.setLocation("storage-client-local-storage/");
+
+        clientConfiguration.setLocation(Files.createTempDirectory("storage-client-local-storage").toString());
+//        clientConfiguration.setLocation("storage-client-local-storage/");
+//        clientConfiguration.setLocation("gs://dev-rawdata-store/data-dev");
 
         client = StorageClient.builder()
                 .withParquetProvider(new ParquetProvider(parquetConfiguration))
@@ -62,7 +65,7 @@ public class StorageClientTest {
     @Test
     void testWithCursor() throws IOException {
 
-        Flowable<GenericRecord> records = generateRecords(1000);
+        Flowable<GenericRecord> records = generateRecords(1,1000);
         client.writeAllData("test", DIMENSIONAL_SCHEMA, records).blockingAwait();
 
 
@@ -81,7 +84,7 @@ public class StorageClientTest {
 
     }
 
-    private Flowable<GenericRecord> generateRecords(int count) {
+    private Flowable<GenericRecord> generateRecords(int offset, int count) {
         GenericRecordBuilder record = recordBuilder
                 .set("string", "foo")
                 .set("boolean", true)
@@ -89,14 +92,14 @@ public class StorageClientTest {
                 .set("long", 123L)
                 .set("double", 123.123D);
 
-        return Flowable.range(1, count)
+        return Flowable.range(offset, count)
                 .map(integer -> record.set("int", integer).build());
     }
 
     @Test
-    void testReadWRite() {
+    void testReadWrite() {
 
-        Flowable<GenericRecord> records = generateRecords(100);
+        Flowable<GenericRecord> records = generateRecords(1,100);
         client.writeAllData("test", DIMENSIONAL_SCHEMA, records).blockingAwait();
         List<GenericRecord> readRecords = client.readData("test", DIMENSIONAL_SCHEMA, null)
                 .toList().blockingGet();
@@ -105,6 +108,19 @@ public class StorageClientTest {
                 .usingElementComparator(Comparator.comparing(r -> ((Integer) r.get("int"))))
                 .containsExactlyInAnyOrderElementsOf(records.toList().blockingGet());
 
+    }
+
+    @Test
+    void testReadLatestRecord() {
+        Flowable<GenericRecord> records1 = generateRecords(1, 500);
+        Flowable<GenericRecord> records2 = generateRecords(500, 501);
+
+        String rootPath = "testReadLatestRecord";
+        client.writeAllData(rootPath + "/file2.parquet", DIMENSIONAL_SCHEMA, records2).blockingAwait();
+        client.writeAllData(rootPath + "/file1.parquet", DIMENSIONAL_SCHEMA, records1).blockingAwait();
+
+        GenericRecord genericRecord = client.readLatestRecord(rootPath, DIMENSIONAL_SCHEMA).blockingGet();
+        assertThat(genericRecord.get("int")).isEqualTo(999);
     }
 
     @Test
@@ -117,10 +133,8 @@ public class StorageClientTest {
         Flowable<Long> unlimitedFlowable = Flowable.generate(emitter -> {
 
             if (counter.incrementAndGet() <= 500) {
-                // System.out.println(Thread.currentThread() + ": emit " + counter.get());
                 emitter.onNext(counter.get());
             } else {
-                // System.out.println(Thread.currentThread() + ": emit done");
                 emitter.onComplete();
             }
             try {
@@ -145,7 +159,7 @@ public class StorageClientTest {
         );
 
         Observable<PositionedRecord> feedBack = client.writeDataUnbounded(
-                () -> "testUnbounded" + System.currentTimeMillis(),
+                () -> "test2/testUnbounded" + System.currentTimeMillis(),
                 DIMENSIONAL_SCHEMA,
                 recordFlowable,
                 1,
