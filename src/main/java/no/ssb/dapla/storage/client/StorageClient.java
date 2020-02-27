@@ -199,7 +199,7 @@ public class StorageClient {
         try {
             return backend.list(pathTo(dataId), Comparator.comparing(FileInfo::getLastModified))
               .filter(fileInfo -> !fileInfo.isDirectory())
-              .firstElement()
+              .lastElement()
               .map(fileInfo -> {
                   ParquetMetadata metadata = readMetadata(fileInfo.getPath());
                   Long size = 0L;

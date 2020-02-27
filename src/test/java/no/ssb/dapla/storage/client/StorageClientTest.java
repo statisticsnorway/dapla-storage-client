@@ -116,8 +116,8 @@ public class StorageClientTest {
         Flowable<GenericRecord> records2 = generateRecords(500, 501);
 
         String rootPath = "testReadLatestRecord";
-        client.writeAllData(rootPath + "/file2.parquet", DIMENSIONAL_SCHEMA, records2).blockingAwait();
         client.writeAllData(rootPath + "/file1.parquet", DIMENSIONAL_SCHEMA, records1).blockingAwait();
+        client.writeAllData(rootPath + "/file2.parquet", DIMENSIONAL_SCHEMA, records2).blockingAwait();
 
         GenericRecord genericRecord = client.readLatestRecord(rootPath, DIMENSIONAL_SCHEMA).blockingGet();
         assertThat(genericRecord.get("int")).isEqualTo(999);
