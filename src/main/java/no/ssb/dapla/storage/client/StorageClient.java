@@ -207,7 +207,7 @@ public class StorageClient {
                       size += block.getRowCount();
                   }
 
-                  return readData(fileInfo.getPath(), schema, new Cursor<>(1, size - 1)).firstElement().blockingGet();
+                  return readData(fileInfo.getPath(), schema, new Cursor<>(1, size)).firstElement().blockingGet();
               });
         } catch (IOException e) {
             throw new RuntimeException("Unable to list dataset path " + pathTo(dataId), e);

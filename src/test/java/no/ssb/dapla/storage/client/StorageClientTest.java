@@ -113,7 +113,7 @@ public class StorageClientTest {
     @Test
     void testReadLatestRecord() {
         Flowable<GenericRecord> records1 = generateRecords(1, 500);
-        Flowable<GenericRecord> records2 = generateRecords(500, 501);
+        Flowable<GenericRecord> records2 = generateRecords(500, 500);
 
         String rootPath = "testReadLatestRecord";
         client.writeAllData(rootPath + "/file1.parquet", DIMENSIONAL_SCHEMA, records1).blockingAwait();
