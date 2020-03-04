@@ -1,5 +1,7 @@
 package no.ssb.dapla.storage.client;
 
+import com.google.common.base.Strings;
+import de.huxhorn.sulky.ulid.ULID;
 import io.reactivex.Completable;
 import io.reactivex.Flowable;
 import io.reactivex.Maybe;
@@ -198,14 +200,14 @@ public class StorageClient {
     public Maybe<GenericRecord> readLatestRecord(String dataId, Schema schema) {
         try {
             return backend.list(pathTo(dataId), Comparator.comparing(FileInfo::getLastModified))
-              .filter(fileInfo -> !fileInfo.isDirectory())
-              .lastElement()
-              .map(fileInfo -> {
-                  ParquetMetadata metadata = readMetadata(fileInfo.getPath());
-                  Long size = 0L;
-                  for (BlockMetaData block : metadata.getBlocks()) {
-                      size += block.getRowCount();
-                  }
+                    .filter(fileInfo -> !fileInfo.isDirectory() && !Strings.nullToEmpty(fileInfo.getPath()).endsWith(".tmp"))
+                    .lastElement()
+                    .map(fileInfo -> {
+                        ParquetMetadata metadata = readMetadata(fileInfo.getPath());
+                        Long size = 0L;
+                        for (BlockMetaData block : metadata.getBlocks()) {
+                            size += block.getRowCount();
+                        }
 
                   return readData(fileInfo.getPath(), schema, new Cursor<>(1, size)).firstElement().blockingGet();
               });
