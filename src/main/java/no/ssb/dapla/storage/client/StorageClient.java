@@ -1,7 +1,6 @@
 package no.ssb.dapla.storage.client;
 
 import com.google.common.base.Strings;
-import de.huxhorn.sulky.ulid.ULID;
 import io.reactivex.Completable;
 import io.reactivex.Flowable;
 import io.reactivex.Maybe;
@@ -13,7 +12,6 @@ import no.ssb.dapla.storage.client.converters.FormatConverter;
 import no.ssb.dapla.storage.client.converters.JsonConverter;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.parquet.filter2.compat.FilterCompat;
 import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.ParquetWriter;
@@ -28,7 +26,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
@@ -132,14 +129,14 @@ public class StorageClient {
      * @return an {@link Observable} emitting the last record in each batch.
      */
     public <R extends GenericRecord> Observable<R> writeDataUnbounded(
-      Supplier<String> idSupplier, Schema schema, Flowable<R> records, long timeWindow, TimeUnit unit, long countWindow
+            Supplier<String> idSupplier, Schema schema, Flowable<R> records, long timeWindow, TimeUnit unit, long countWindow
     ) {
         return records
-          .window(timeWindow, unit, countWindow, true)
-          .switchMapMaybe(
-            recordsWindow -> writeData(idSupplier.get(), schema, recordsWindow).lastElement()
-          )
-          .toObservable();
+                .window(timeWindow, unit, countWindow, true)
+                .switchMapMaybe(
+                        recordsWindow -> writeData(idSupplier.get(), schema, recordsWindow).lastElement()
+                )
+                .toObservable();
     }
 
     /**
@@ -166,9 +163,9 @@ public class StorageClient {
         return Flowable.defer(() -> {
             DataWriter writer = new DataWriter(dataId, schema);
             return records
-              .doAfterNext(writer::write)
-              .doOnComplete(writer::close)
-              .doOnError(throwable -> writer.cancel());
+                    .doAfterNext(writer::write)
+                    .doOnComplete(writer::close)
+                    .doOnError(throwable -> writer.cancel());
         });
     }
 
@@ -231,7 +228,9 @@ public class StorageClient {
         });
     }
 
-    /** Return the full path to data, including location as defined by {@link no.ssb.dapla.storage.client.StorageClient.Configuration} */
+    /**
+     * Return the full path to data, including location as defined by {@link no.ssb.dapla.storage.client.StorageClient.Configuration}
+     */
     private String pathTo(String dataId) {
         String rootPath = configuration.getLocation().replaceFirst("/*$", "");
         return dataId.startsWith(rootPath) ? dataId : rootPath + "/" + dataId;
