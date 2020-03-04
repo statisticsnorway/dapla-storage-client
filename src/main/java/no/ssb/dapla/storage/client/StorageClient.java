@@ -239,7 +239,7 @@ public class StorageClient {
 
     public ParquetMetadata readMetadata(String dataId) throws IOException {
         try (SeekableByteChannel channel = backend.read(pathTo(dataId))) {
-            ParquetFileReader parquetFileReader = provider.getMetadata(channel);
+            ParquetFileReader parquetFileReader = provider.getParquetFileReader(channel);
             return parquetFileReader.getFooter();
         }
     }

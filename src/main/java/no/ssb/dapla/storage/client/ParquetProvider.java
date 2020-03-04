@@ -33,7 +33,7 @@ public class ParquetProvider {
     /**
      * Returns a reader for the file.
      */
-    public ParquetFileReader getMetadata(SeekableByteChannel input) throws IOException {
+    public ParquetFileReader getParquetFileReader(SeekableByteChannel input) throws IOException {
         return ParquetFileReader.open(new SeekableByteChannelInputFile(input));
     }
 
