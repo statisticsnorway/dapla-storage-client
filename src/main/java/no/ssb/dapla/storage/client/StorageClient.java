@@ -111,7 +111,7 @@ public class StorageClient {
                                       String mediaType, Cursor<Long> cursor) throws UnsupportedMediaTypeException {
         for (FormatConverter converter : converters) {
             if (converter.doesSupport(mediaType)) {
-                Flowable<GenericRecord> records = readData(dataId, schema, cursor);
+                Flowable<GenericRecord> records = readData(dataId, cursor);
                 return converter.write(records, outputStream, mediaType, schema);
             }
         }
@@ -176,11 +176,10 @@ public class StorageClient {
      * Read a sequence of {@link GenericRecord}s from the bucket storage.
      *
      * @param dataId the identifier for the data.
-     * @param schema the schema used to create the records.
      * @param cursor a cursor on record number.
      * @return a {@link Flowable} of records.
      */
-    public Flowable<GenericRecord> readData(String dataId, Schema schema, Cursor<Long> cursor) {
+    public Flowable<GenericRecord> readData(String dataId, Cursor<Long> cursor) {
         // TODO: Handle projection.
         // TODO: Handle filtering.
         if (cursor != null) {
@@ -191,13 +190,13 @@ public class StorageClient {
             // we return one extra and limit with actual size. This will probably be fixed by parquet team at some
             // point.
             FilterCompat.Filter filter = FilterCompat.get(new PagedRecordFilter(start, start + size + 1));
-            return readRecords(dataId, schema, filter).limit(size);
+            return readRecords(dataId, filter).limit(size);
         } else {
-            return readRecords(dataId, schema, FilterCompat.NOOP);
+            return readRecords(dataId, FilterCompat.NOOP);
         }
     }
 
-    public Maybe<GenericRecord> readLatestRecord(String dataId, Schema schema) {
+    public Maybe<GenericRecord> readLatestRecord(String dataId) {
         try {
             return backend.list(pathTo(dataId), Comparator.comparing(FileInfo::getLastModified))
                     .filter(fileInfo -> !fileInfo.isDirectory() && !Strings.nullToEmpty(fileInfo.getPath()).endsWith(".tmp"))
@@ -209,17 +208,17 @@ public class StorageClient {
                             size += block.getRowCount();
                         }
 
-                  return readData(fileInfo.getPath(), schema, new Cursor<>(1, size)).firstElement().blockingGet();
-              });
+                        return readData(fileInfo.getPath(), new Cursor<>(1, size)).firstElement().blockingGet();
+                    });
         } catch (IOException e) {
             throw new RuntimeException("Unable to list dataset path " + pathTo(dataId), e);
         }
     }
 
-    private Flowable<GenericRecord> readRecords(String dataId, Schema schema, FilterCompat.Filter filter) {
+    private Flowable<GenericRecord> readRecords(String dataId, FilterCompat.Filter filter) {
         return Flowable.generate(() -> {
             SeekableByteChannel readableChannel = backend.read(pathTo(dataId));
-            return provider.getReader(readableChannel, schema, filter);
+            return provider.getReader(readableChannel, filter);
         }, (parquetReader, emitter) -> {
             GenericRecord read = parquetReader.read();
             if (read == null) {

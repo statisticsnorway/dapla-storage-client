@@ -75,9 +75,7 @@ public class StorageClientTest {
             size += block.getRowCount();
         }
 
-        Single<GenericRecord> last = client.readData("test", DIMENSIONAL_SCHEMA,
-                new Cursor<>(1, size - 1)
-        ).firstOrError();
+        Single<GenericRecord> last = client.readData("test", new Cursor<>(1, size - 1)).firstOrError();
 
         GenericRecord genericRecord = last.blockingGet();
         assertThat(genericRecord.get("int")).isEqualTo(999);
@@ -101,8 +99,7 @@ public class StorageClientTest {
 
         Flowable<GenericRecord> records = generateRecords(1,100);
         client.writeAllData("test", DIMENSIONAL_SCHEMA, records).blockingAwait();
-        List<GenericRecord> readRecords = client.readData("test", DIMENSIONAL_SCHEMA, null)
-                .toList().blockingGet();
+        List<GenericRecord> readRecords = client.readData("test", null).toList().blockingGet();
 
         assertThat(readRecords)
                 .usingElementComparator(Comparator.comparing(r -> ((Integer) r.get("int"))))

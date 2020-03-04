@@ -37,13 +37,11 @@ public class ParquetProvider {
         return ParquetFileReader.open(new SeekableByteChannelInputFile(input));
     }
 
-    public ParquetReader<GenericRecord> getReader(SeekableByteChannel input, Schema schema, Filter filter)
-            throws IOException {
+    public ParquetReader<GenericRecord> getReader(SeekableByteChannel input, Filter filter) throws IOException {
         SeekableByteChannelInputFile inputFile = new SeekableByteChannelInputFile(input);
-        ParquetReader<GenericRecord> reader = AvroParquetReader.<GenericRecord>builder(inputFile)
+        return AvroParquetReader.<GenericRecord>builder(inputFile)
                 .withFilter(filter)
                 .build();
-        return reader;
     }
 
     public ParquetWriter<GenericRecord> getWriter(SeekableByteChannel output, Schema schema) throws IOException {
