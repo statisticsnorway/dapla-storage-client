@@ -3,19 +3,28 @@ package no.ssb.dapla.storage.client;
 import io.reactivex.Flowable;
 import io.reactivex.Observable;
 import io.reactivex.Single;
-import no.ssb.dapla.storage.client.backend.gcs.GoogleCloudStorageBackend;
+import no.ssb.dapla.storage.client.StorageClient.StorageClientException;
 import no.ssb.dapla.storage.client.backend.local.LocalBackend;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.generic.GenericRecordBuilder;
+import org.apache.parquet.example.data.simple.SimpleGroup;
 import org.apache.parquet.hadoop.metadata.BlockMetaData;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
+import org.apache.parquet.io.InvalidRecordException;
+import org.apache.parquet.schema.MessageType;
+import org.apache.parquet.schema.MessageTypeParser;
+import org.apache.parquet.schema.PrimitiveType;
+import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName;
+import org.apache.parquet.schema.Type.Repetition;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Random;
@@ -25,6 +34,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class StorageClientTest {
 
@@ -42,22 +52,11 @@ public class StorageClientTest {
 
     @BeforeEach
     void setUp() throws IOException {
-
-        ParquetProvider.Configuration parquetConfiguration = new ParquetProvider.Configuration();
-        parquetConfiguration.setPageSize(128);
-        parquetConfiguration.setRowGroupSize(8 * 128);
-
-        StorageClient.Configuration clientConfiguration = new StorageClient.Configuration();
-
-
-        clientConfiguration.setLocation(Files.createTempDirectory("storage-client-local-storage").toString());
-//        clientConfiguration.setLocation("storage-client-local-storage/");
-//        clientConfiguration.setLocation("gs://dev-rawdata-store/data-dev");
-
         client = StorageClient.builder()
-                .withParquetProvider(new ParquetProvider(parquetConfiguration))
+                .withParquetProvider(new ParquetProvider(64 * 1024 * 1024, 8 * 1024 * 1024))
                 .withBinaryBackend(new LocalBackend())
-                .withConfiguration(clientConfiguration)
+                .withLocation(Files.createTempDirectory("storage-client-local-storage").toString())
+//                .withLocation("gs://dev-rawdata-store/data-dev")
                 .build();
         recordBuilder = new GenericRecordBuilder(DIMENSIONAL_SCHEMA);
     }
@@ -65,9 +64,8 @@ public class StorageClientTest {
     @Test
     void testWithCursor() throws IOException {
 
-        Flowable<GenericRecord> records = generateRecords(1,1000);
+        Flowable<GenericRecord> records = generateRecords(1, 1000);
         client.writeAllData("test", DIMENSIONAL_SCHEMA, records).blockingAwait();
-
 
         ParquetMetadata metadata = client.readMetadata("test");
         Long size = 0L;
@@ -82,22 +80,10 @@ public class StorageClientTest {
 
     }
 
-    private Flowable<GenericRecord> generateRecords(int offset, int count) {
-        GenericRecordBuilder record = recordBuilder
-                .set("string", "foo")
-                .set("boolean", true)
-                .set("float", 123.123F)
-                .set("long", 123L)
-                .set("double", 123.123D);
-
-        return Flowable.range(offset, count)
-                .map(integer -> record.set("int", integer).build());
-    }
-
     @Test
     void testReadWrite() {
 
-        Flowable<GenericRecord> records = generateRecords(1,100);
+        Flowable<GenericRecord> records = generateRecords(1, 100);
         client.writeAllData("test", DIMENSIONAL_SCHEMA, records).blockingAwait();
         List<GenericRecord> readRecords = client.readData("test", null).toList().blockingGet();
 
@@ -108,16 +94,43 @@ public class StorageClientTest {
     }
 
     @Test
-    void testReadLatestRecord() {
-        Flowable<GenericRecord> records1 = generateRecords(1, 500);
-        Flowable<GenericRecord> records2 = generateRecords(500, 500);
+    void thatReadParquetGroupWithProjectionSchemaWorks(TestInfo testInfo) {
+        client.writeAllData(testInfo.getDisplayName(), DIMENSIONAL_SCHEMA, generateRecords(1, 10)).blockingAwait();
 
-        String rootPath = "testReadLatestRecord";
-        client.writeAllData(rootPath + "/file1.parquet", DIMENSIONAL_SCHEMA, records1).blockingAwait();
-        client.writeAllData(rootPath + "/file2.parquet", DIMENSIONAL_SCHEMA, records2).blockingAwait();
+        /*
+          message no.ssb.dataset.root {
+            required int32 int;
+          }
+         */
+        MessageType projectionSchema = new MessageType(
+                "no.ssb.dataset.root",
+                new PrimitiveType(
+                        Repetition.REQUIRED,
+                        PrimitiveTypeName.INT32,
+                        "int"
+                )
+        );
 
-        GenericRecord genericRecord = client.readLatestRecord(rootPath, DIMENSIONAL_SCHEMA).blockingGet();
-        assertThat(genericRecord.get("int")).isEqualTo(999);
+        List<String> values = new ArrayList<>();
+        client.readParquetFile(testInfo.getDisplayName(), projectionSchema, group -> {
+            values.add(group.getValueToString(0, 0));
+        });
+        assertThat(values).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10");
+    }
+
+    @Test
+    void thatReadParquetFileFailsWhenProjectionSchemaIsNotASubsetOfOriginalSchema(TestInfo testInfo) {
+        client.writeAllData(testInfo.getDisplayName(), DIMENSIONAL_SCHEMA, generateRecords(1, 1)).blockingAwait();
+        MessageType projectionSchema = MessageTypeParser.parseMessageType(
+                "message unknown {\n" +
+                        " required int32 doesnt-exist;\n" +
+                        "}"
+        );
+
+        assertThatThrownBy(() -> client.readParquetFile(testInfo.getDisplayName(), projectionSchema, SimpleGroup::toString))
+                .isInstanceOf(StorageClientException.class)
+                .hasMessageContaining("Failed to read parquet file in path")
+                .hasCauseInstanceOf(InvalidRecordException.class);
     }
 
     @Test
@@ -169,6 +182,17 @@ public class StorageClientTest {
         assertThat(positions).containsExactlyElementsOf(
                 Stream.iterate(1L, t -> t + 1).limit(50).collect(Collectors.toList())
         );
+    }
+
+    private Flowable<GenericRecord> generateRecords(int offset, int count) {
+        GenericRecordBuilder record = recordBuilder
+                .set("string", "foo")
+                .set("boolean", true)
+                .set("float", 123.123F)
+                .set("long", 123L)
+                .set("double", 123.123D);
+
+        return Flowable.range(offset, count).map(integer -> record.set("int", integer).build());
     }
 
     private static class PositionedRecord implements GenericRecord {

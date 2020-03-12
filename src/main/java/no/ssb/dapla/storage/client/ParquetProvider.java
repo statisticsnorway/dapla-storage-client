@@ -2,11 +2,15 @@ package no.ssb.dapla.storage.client;
 
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.parquet.avro.AvroParquetReader;
 import org.apache.parquet.avro.AvroParquetWriter;
+import org.apache.parquet.example.data.Group;
 import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.ParquetReader;
 import org.apache.parquet.hadoop.ParquetWriter;
+import org.apache.parquet.hadoop.api.ReadSupport;
+import org.apache.parquet.hadoop.example.GroupReadSupport;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.apache.parquet.io.DelegatingPositionOutputStream;
 import org.apache.parquet.io.DelegatingSeekableInputStream;
@@ -24,10 +28,12 @@ import static org.apache.parquet.filter2.compat.FilterCompat.Filter;
 
 public class ParquetProvider {
 
-    private final Configuration configuration;
+    private Integer rowGroupSize;
+    private Integer pageSize;
 
-    public ParquetProvider(Configuration configuration) {
-        this.configuration = configuration;
+    public ParquetProvider(Integer rowGroupSize, Integer pageSize) {
+        this.rowGroupSize = rowGroupSize;
+        this.pageSize = pageSize;
     }
 
     /**
@@ -35,6 +41,17 @@ public class ParquetProvider {
      */
     public ParquetFileReader getParquetFileReader(SeekableByteChannel input) throws IOException {
         return ParquetFileReader.open(new SeekableByteChannelInputFile(input));
+    }
+
+    public ParquetReader<Group> getParquetGroupReader(SeekableByteChannel input, String readSchema) throws IOException {
+        SeekableByteChannelInputFile inputFile = new SeekableByteChannelInputFile(input);
+
+        Configuration conf = new Configuration();
+        conf.set(ReadSupport.PARQUET_READ_SCHEMA, readSchema);
+
+        return new ParquetGroupReaderBuilder(inputFile, new GroupReadSupport())
+                .withConf(conf)
+                .build();
     }
 
     public ParquetReader<GenericRecord> getReader(SeekableByteChannel input, Filter filter) throws IOException {
@@ -45,43 +62,66 @@ public class ParquetProvider {
     }
 
     public ParquetWriter<GenericRecord> getWriter(SeekableByteChannel output, Schema schema) throws IOException {
-        ParquetWriter<GenericRecord> writer = AvroParquetWriter.<GenericRecord>builder(new OutputFile() {
-
-            @Override
-            public PositionOutputStream create(long blockSizeHint) {
-                return new DelegatingPositionOutputStream(Channels.newOutputStream(output)) {
-                    @Override
-                    public long getPos() throws IOException {
-                        return output.position();
-                    }
-                };
-            }
-
-            @Override
-            public PositionOutputStream createOrOverwrite(long blockSizeHint) {
-                return new DelegatingPositionOutputStream(Channels.newOutputStream(output)) {
-                    @Override
-                    public long getPos() throws IOException {
-                        return output.position();
-                    }
-                };
-            }
-
-            @Override
-            public boolean supportsBlockSize() {
-                return false;
-            }
-
-            @Override
-            public long defaultBlockSize() {
-                return 0;
-            }
-        }).withSchema(schema)
+        SeekableByteChannelOutputFile outputFile = new SeekableByteChannelOutputFile(output);
+        return AvroParquetWriter.<GenericRecord>builder(outputFile).withSchema(schema)
                 .withCompressionCodec(CompressionCodecName.SNAPPY)
-                .withPageSize(configuration.getPageSize())
-                .withRowGroupSize(configuration.getRowGroupSize())
+                .withPageSize(pageSize)
+                .withRowGroupSize(rowGroupSize)
                 .build();
-        return writer;
+    }
+
+    private static class ParquetGroupReaderBuilder extends ParquetReader.Builder<Group> {
+
+        private final ReadSupport<Group> readSupport;
+
+        protected ParquetGroupReaderBuilder(InputFile file, ReadSupport<Group> readSupport) {
+            super(file);
+            this.readSupport = readSupport;
+        }
+
+        @Override
+        protected ReadSupport<Group> getReadSupport() {
+            return readSupport;
+        }
+    }
+
+    private static class SeekableByteChannelOutputFile implements OutputFile {
+
+        private final SeekableByteChannel output;
+
+        private SeekableByteChannelOutputFile(SeekableByteChannel output) {
+            this.output = Objects.requireNonNull(output);
+        }
+
+        @Override
+        public PositionOutputStream create(long blockSizeHint) {
+            return new DelegatingPositionOutputStream(Channels.newOutputStream(output)) {
+                @Override
+                public long getPos() throws IOException {
+                    return output.position();
+                }
+            };
+        }
+
+        @Override
+        public PositionOutputStream createOrOverwrite(long blockSizeHint) {
+            return new DelegatingPositionOutputStream(Channels.newOutputStream(output)) {
+                @Override
+                public long getPos() throws IOException {
+                    return output.position();
+                }
+            };
+        }
+
+        @Override
+        public boolean supportsBlockSize() {
+            return false;
+        }
+
+        @Override
+        public long defaultBlockSize() {
+            return 0;
+        }
     }
 
     private static class SeekableByteChannelInputFile implements InputFile {
@@ -112,31 +152,4 @@ public class ParquetProvider {
             };
         }
     }
-
-    public static class Configuration {
-
-        private Integer rowGroupSize;
-        private Integer pageSize;
-
-        public Configuration() {
-        }
-
-        public Integer getRowGroupSize() {
-            return rowGroupSize;
-        }
-
-        public void setRowGroupSize(Integer rowGroupSize) {
-            this.rowGroupSize = rowGroupSize;
-        }
-
-        public Integer getPageSize() {
-            return pageSize;
-        }
-
-        public void setPageSize(Integer pageSize) {
-            this.pageSize = pageSize;
-        }
-
-    }
-
 }

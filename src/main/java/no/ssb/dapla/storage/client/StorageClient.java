@@ -1,9 +1,7 @@
 package no.ssb.dapla.storage.client;
 
-import com.google.common.base.Strings;
 import io.reactivex.Completable;
 import io.reactivex.Flowable;
-import io.reactivex.Maybe;
 import io.reactivex.Observable;
 import no.ssb.dapla.storage.client.backend.BinaryBackend;
 import no.ssb.dapla.storage.client.backend.FileInfo;
@@ -12,11 +10,14 @@ import no.ssb.dapla.storage.client.converters.FormatConverter;
 import no.ssb.dapla.storage.client.converters.JsonConverter;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
+import org.apache.parquet.example.data.Group;
+import org.apache.parquet.example.data.simple.SimpleGroup;
 import org.apache.parquet.filter2.compat.FilterCompat;
 import org.apache.parquet.hadoop.ParquetFileReader;
+import org.apache.parquet.hadoop.ParquetReader;
 import org.apache.parquet.hadoop.ParquetWriter;
-import org.apache.parquet.hadoop.metadata.BlockMetaData;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
+import org.apache.parquet.schema.MessageType;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -42,13 +43,13 @@ public class StorageClient {
     private final BinaryBackend backend;
     private final List<FormatConverter> converters;
     private final ParquetProvider provider;
-    private final Configuration configuration;
+    private final String location;
 
     private StorageClient(Builder builder) {
         this.backend = Objects.requireNonNull(builder.binaryBackend);
         this.converters = Objects.requireNonNull(builder.converters);
         this.provider = Objects.requireNonNull(builder.parquetProvider);
-        this.configuration = Objects.requireNonNull(builder.configuration);
+        this.location = Objects.requireNonNull(builder.location);
     }
 
     public static Builder builder() {
@@ -193,25 +194,6 @@ public class StorageClient {
         }
     }
 
-    public Maybe<GenericRecord> readLatestRecord(String dataId) {
-        try {
-            return backend.list(pathTo(dataId), Comparator.comparing(FileInfo::getLastModified))
-                    .filter(fileInfo -> !fileInfo.isDirectory() && !Strings.nullToEmpty(fileInfo.getPath()).endsWith(".tmp"))
-                    .lastElement()
-                    .map(fileInfo -> {
-                        ParquetMetadata metadata = readMetadata(fileInfo.getPath());
-                        Long size = 0L;
-                        for (BlockMetaData block : metadata.getBlocks()) {
-                            size += block.getRowCount();
-                        }
-
-                        return readData(fileInfo.getPath(), new Cursor<>(1, size)).firstElement().blockingGet();
-                    });
-        } catch (IOException e) {
-            throw new RuntimeException("Unable to list dataset path " + pathTo(dataId), e);
-        }
-    }
-
     private Flowable<GenericRecord> readRecords(String dataId, FilterCompat.Filter filter) {
         return Flowable.generate(() -> {
             SeekableByteChannel readableChannel = backend.read(pathTo(dataId));
@@ -229,10 +211,73 @@ public class StorageClient {
     }
 
     /**
-     * Return the full path to data, including location as defined by {@link no.ssb.dapla.storage.client.StorageClient.Configuration}
+     * Find the file that was most recently modified, ignoring directories and files with a '.tmp' suffix.
+     *
+     * @param dataId the data identifier.
+     * @return the file as a {@link FileInfo}.
      */
-    private String pathTo(String dataId) {
-        String rootPath = configuration.getLocation().replaceFirst("/*$", "");
+    public FileInfo getLastModified(String dataId) {
+        try {
+            return backend
+                    .list(pathTo(dataId), Comparator.comparing(FileInfo::getLastModified))
+                    .filter(fileInfo -> !fileInfo.isDirectory() && !fileInfo.hasSuffix(".tmp"))
+                    .lastElement()
+                    .blockingGet();
+        } catch (IOException e) {
+            throw new StorageClientException(String.format("Unable to find last modified in path '%s'", pathTo(dataId)), e);
+        }
+    }
+
+    /**
+     * Read a parquet file with a given data identifier, using a given projection schema. The projection schema is a
+     * subset of the complete original schema for the file, and only the columns needed to reconstruct the projection
+     * schema will be scanned. E.g:
+     * <p>Original schema:</p>
+     * <pre>
+     * {@code
+     * message no.ssb.dataset.root {
+     *   required binary string (UTF8);
+     *   required int32 int;
+     *   required boolean boolean;
+     *   required float float;
+     *   required int64 long;
+     *   required double double;
+     * }
+     * }
+     * </pre>
+     * <p>If only interested in the 'int' column, the below projection schema would save you from having to scan all columns:</p>
+     * <pre>
+     * {@code
+     * message no.ssb.dataset.root {
+     *   required int32 int;
+     * }
+     * }
+     * </pre>
+     *
+     * @param dataId the data identifier.
+     * @param projectionSchema the projection schema.
+     * @param groupVisitor a {@link ParquetGroupVisitor} that will be applied to each record found.
+     */
+    public void readParquetFile(String dataId, MessageType projectionSchema, ParquetGroupVisitor groupVisitor) {
+        String path = pathTo(dataId);
+        try (
+                SeekableByteChannel channel = backend.read(path);
+                ParquetReader<Group> reader = provider.getParquetGroupReader(channel, projectionSchema.toString())
+        ) {
+            SimpleGroup group;
+            while ((group = (SimpleGroup) reader.read()) != null) {
+                groupVisitor.visit(group);
+            }
+        } catch (Exception e) {
+            throw new StorageClientException(String.format("Failed to read parquet file in path '%s'", path), e);
+        }
+    }
+
+    /**
+     * Return the full path to data, including location
+     */
+    protected String pathTo(String dataId) {
+        String rootPath = location.replaceFirst("/*$", "");
         return dataId.startsWith(rootPath) ? dataId : rootPath + "/" + dataId;
     }
 
@@ -243,28 +288,12 @@ public class StorageClient {
         }
     }
 
-    public static class Configuration {
-
-        private String location;
-
-        public Configuration() {
-        }
-
-        public String getLocation() {
-            return location;
-        }
-
-        public void setLocation(String location) {
-            this.location = location;
-        }
-    }
-
     public static class Builder {
 
         private ParquetProvider parquetProvider;
         private BinaryBackend binaryBackend;
         private List<FormatConverter> converters = new ArrayList<>();
-        private Configuration configuration;
+        public String location;
 
 
         public Builder withParquetProvider(ParquetProvider parquetProvider) {
@@ -287,8 +316,8 @@ public class StorageClient {
             return this;
         }
 
-        public Builder withConfiguration(Configuration configuration) {
-            this.configuration = configuration;
+        public Builder withLocation(String location) {
+            this.location = location;
             return this;
         }
 
@@ -359,6 +388,16 @@ public class StorageClient {
                 }
                 throw ioe;
             }
+        }
+    }
+
+    public static class StorageClientException extends RuntimeException {
+        public StorageClientException(String message, Throwable cause) {
+            super(message, cause);
+        }
+
+        public StorageClientException(String message) {
+            super(message);
         }
     }
 }

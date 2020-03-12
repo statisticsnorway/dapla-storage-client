@@ -33,6 +33,11 @@ public class FileInfo {
         return this;
     }
 
+    public boolean hasSuffix(String value) {
+        Objects.requireNonNull(value);
+        return path != null && path.endsWith(value);
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
