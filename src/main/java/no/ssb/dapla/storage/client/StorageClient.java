@@ -5,9 +5,6 @@ import io.reactivex.Flowable;
 import io.reactivex.Observable;
 import no.ssb.dapla.storage.client.backend.BinaryBackend;
 import no.ssb.dapla.storage.client.backend.FileInfo;
-import no.ssb.dapla.storage.client.converters.CsvConverter;
-import no.ssb.dapla.storage.client.converters.FormatConverter;
-import no.ssb.dapla.storage.client.converters.JsonConverter;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.parquet.example.data.Group;
@@ -20,12 +17,8 @@ import org.apache.parquet.hadoop.metadata.ParquetMetadata;
 import org.apache.parquet.schema.MessageType;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.channels.SeekableByteChannel;
-import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -33,87 +26,21 @@ import java.util.function.Supplier;
 
 /**
  * Data client is an abstraction to read and write Parquet files on bucket storage.
- * <p>
- * The data client supports CSV and JSON type conversions and can be extended by implementing the
- * {@link FormatConverter} interface (see {@link CsvConverter} and
- * {@link JsonConverter} for examples).
  */
 public class StorageClient {
 
     private final BinaryBackend backend;
-    private final List<FormatConverter> converters;
     private final ParquetProvider provider;
     private final String location;
 
     private StorageClient(Builder builder) {
         this.backend = Objects.requireNonNull(builder.binaryBackend);
-        this.converters = Objects.requireNonNull(builder.converters);
         this.provider = Objects.requireNonNull(builder.parquetProvider);
         this.location = Objects.requireNonNull(builder.location);
     }
 
     public static Builder builder() {
         return new Builder();
-    }
-
-    /**
-     * Checks if the client can convert from and to a media type
-     *
-     * @param mediaType the media type to check against
-     * @return true if the data client has a converter that support the media type.
-     */
-    public boolean canConvert(String mediaType) {
-        for (FormatConverter converter : converters) {
-            if (converter.doesSupport(mediaType)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Convert and write binary data.
-     *
-     * @param dataId    an opaque identifier for the data.
-     * @param schema    the schema used to parse the data.
-     * @param input     the binary data.
-     * @param mediaType the media type of the binary data.
-     * @return a completable that completes once the data is saved.
-     * @throws UnsupportedMediaTypeException if the client does not support the media type.
-     */
-    public Completable convertAndWrite(String dataId, Schema schema, InputStream input, String mediaType) throws UnsupportedMediaTypeException {
-        for (FormatConverter converter : converters) {
-            if (converter.doesSupport(mediaType)) {
-                Flowable<GenericRecord> records = converter.read(input, mediaType, schema);
-                return writeAllData(dataId, schema, records);
-            }
-        }
-        throw new UnsupportedMediaTypeException("unsupported type " + mediaType);
-    }
-
-    /**
-     * Read data and convert to binary data.
-     *
-     * @param dataId       an opaque identifier for the data.
-     * @param schema       the schema used to parse the data.
-     * @param outputStream the output stream to read the data into.
-     * @param mediaType    the media type of the binary data.
-     * @return a completable that completes once the data is read.
-     * @throws UnsupportedMediaTypeException if the client does not support the media type.
-     */
-    public Completable readAndConvert(String dataId, Schema schema, OutputStream outputStream, String mediaType) throws UnsupportedMediaTypeException {
-        return readAndConvert(dataId, schema, outputStream, mediaType, null);
-    }
-
-    public Completable readAndConvert(String dataId, Schema schema, OutputStream outputStream,
-                                      String mediaType, Cursor<Long> cursor) throws UnsupportedMediaTypeException {
-        for (FormatConverter converter : converters) {
-            if (converter.doesSupport(mediaType)) {
-                Flowable<GenericRecord> records = readData(dataId, cursor);
-                return converter.write(records, outputStream, mediaType, schema);
-            }
-        }
-        throw new UnsupportedMediaTypeException("unsupported type " + mediaType);
     }
 
     /**
@@ -254,9 +181,9 @@ public class StorageClient {
      * }
      * </pre>
      *
-     * @param dataId the data identifier.
+     * @param dataId           the data identifier.
      * @param projectionSchema the projection schema.
-     * @param groupVisitor a {@link ParquetGroupVisitor} that will be applied to each record found.
+     * @param groupVisitor     a {@link ParquetGroupVisitor} that will be applied to each record found.
      */
     public void readParquetFile(String dataId, MessageType projectionSchema, ParquetGroupVisitor groupVisitor) {
         String path = pathTo(dataId);
@@ -292,7 +219,6 @@ public class StorageClient {
 
         private ParquetProvider parquetProvider;
         private BinaryBackend binaryBackend;
-        private List<FormatConverter> converters = new ArrayList<>();
         public String location;
 
 
@@ -303,16 +229,6 @@ public class StorageClient {
 
         public Builder withBinaryBackend(BinaryBackend binaryBackend) {
             this.binaryBackend = binaryBackend;
-            return this;
-        }
-
-        public Builder withFormatConverter(FormatConverter formatConverter) {
-            this.converters.add(formatConverter);
-            return this;
-        }
-
-        public Builder withFormatConverters(List<FormatConverter> formatConverters) {
-            this.converters.addAll(formatConverters);
             return this;
         }
 
