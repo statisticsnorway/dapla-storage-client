@@ -1,5 +1,6 @@
 package no.ssb.dapla.storage.client;
 
+import com.google.api.client.util.Lists;
 import io.reactivex.Completable;
 import io.reactivex.Flowable;
 import io.reactivex.Observable;
@@ -19,6 +20,7 @@ import org.apache.parquet.schema.MessageType;
 import java.io.IOException;
 import java.nio.channels.SeekableByteChannel;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -135,6 +137,20 @@ public class StorageClient {
         }, parquetReader -> {
             parquetReader.close();
         });
+    }
+
+    /**
+     * List the files for a given data id.
+     *
+     * @param dataId the data identifier.
+     * @return the files as a List of {@link FileInfo}.
+     */
+    public List<FileInfo> list(String dataId) {
+        try {
+            return Lists.newArrayList(backend.list(pathTo(dataId)).blockingIterable());
+        } catch (IOException e) {
+            throw new StorageClientException(String.format("Unable to list files in path '%s'", pathTo(dataId)), e);
+        }
     }
 
     /**
