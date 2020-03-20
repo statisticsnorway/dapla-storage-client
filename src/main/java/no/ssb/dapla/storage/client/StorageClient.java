@@ -221,7 +221,8 @@ public class StorageClient {
      */
     protected String pathTo(String dataId) {
         String rootPath = location.replaceFirst("/*$", "");
-        return dataId.startsWith(rootPath) ? dataId : rootPath + "/" + dataId;
+        String dataIdPath = dataId.startsWith("/") ? dataId : "/" + dataId;
+        return dataId.startsWith(rootPath) ? dataId : rootPath + dataIdPath;
     }
 
     public ParquetMetadata readMetadata(String dataId) throws IOException {
