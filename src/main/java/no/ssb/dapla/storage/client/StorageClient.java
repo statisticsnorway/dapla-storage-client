@@ -27,7 +27,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 /**
- * Data client is an abstraction to read and write Parquet files on bucket storage.
+ * StorageClient is an abstraction to read and write Parquet files on bucket storage.
  */
 public class StorageClient {
 
@@ -96,46 +96,6 @@ public class StorageClient {
                     .doAfterNext(writer::write)
                     .doOnComplete(writer::close)
                     .doOnError(throwable -> writer.cancel());
-        });
-    }
-
-    /**
-     * Read a sequence of {@link GenericRecord}s from the bucket storage.
-     *
-     * @param dataId the identifier for the data.
-     * @param cursor a cursor on record number.
-     * @return a {@link Flowable} of records.
-     */
-    public Flowable<GenericRecord> readData(String dataId, Cursor<Long> cursor) {
-        // TODO: Handle projection.
-        // TODO: Handle filtering.
-        if (cursor != null) {
-            // Convert to pos + size
-            long start = Math.max(cursor.getAfter(), 0);
-            int size = Math.max(cursor.getNext(), 0);
-            // Note the size + 1 here. The filter implementation goes through all the groups unless
-            // we return one extra and limit with actual size. This will probably be fixed by parquet team at some
-            // point.
-            FilterCompat.Filter filter = FilterCompat.get(new PagedRecordFilter(start, start + size + 1));
-            return readRecords(dataId, filter).limit(size);
-        } else {
-            return readRecords(dataId, FilterCompat.NOOP);
-        }
-    }
-
-    private Flowable<GenericRecord> readRecords(String dataId, FilterCompat.Filter filter) {
-        return Flowable.generate(() -> {
-            SeekableByteChannel readableChannel = backend.read(pathTo(dataId));
-            return provider.getReader(readableChannel, filter);
-        }, (parquetReader, emitter) -> {
-            GenericRecord read = parquetReader.read();
-            if (read == null) {
-                emitter.onComplete();
-            } else {
-                emitter.onNext(read);
-            }
-        }, parquetReader -> {
-            parquetReader.close();
         });
     }
 
@@ -223,13 +183,6 @@ public class StorageClient {
         String rootPath = location.replaceFirst("/*$", "");
         String dataIdPath = dataId.startsWith("/") ? dataId : "/" + dataId;
         return dataId.startsWith(rootPath) ? dataId : rootPath + dataIdPath;
-    }
-
-    public ParquetMetadata readMetadata(String dataId) throws IOException {
-        try (SeekableByteChannel channel = backend.read(pathTo(dataId))) {
-            ParquetFileReader parquetFileReader = provider.getParquetFileReader(channel);
-            return parquetFileReader.getFooter();
-        }
     }
 
     public static class Builder {

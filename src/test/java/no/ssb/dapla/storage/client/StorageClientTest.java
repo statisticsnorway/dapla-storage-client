@@ -19,6 +19,7 @@ import org.apache.parquet.schema.PrimitiveType;
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName;
 import org.apache.parquet.schema.Type.Repetition;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 
@@ -80,21 +81,25 @@ public class StorageClientTest {
 
     }
 
+    @Disabled("See FIXME in test method")
     @Test
     void testReadWrite() {
 
         Flowable<GenericRecord> records = generateRecords(1, 100);
         client.writeAllData("test", DIMENSIONAL_SCHEMA, records).blockingAwait();
-        List<GenericRecord> readRecords = client.readData("test", null).toList().blockingGet();
 
-        assertThat(readRecords)
-                .usingElementComparator(Comparator.comparing(r -> ((Integer) r.get("int"))))
-                .containsExactlyInAnyOrderElementsOf(records.toList().blockingGet());
+        //FIXME: Don't use StorageClient to validate test result as this is the class we're testing
+//        List<GenericRecord> readRecords = client.readData("test", null).toList().blockingGet();
+
+//        assertThat(readRecords)
+//                .usingElementComparator(Comparator.comparing(r -> ((Integer) r.get("int"))))
+//                .containsExactlyInAnyOrderElementsOf(records.toList().blockingGet());
 
     }
 
     @Test
     void thatReadParquetGroupWithProjectionSchemaWorks(TestInfo testInfo) {
+        //TODO: Find a way to create test data without depending on StorageClient
         client.writeAllData(testInfo.getDisplayName(), DIMENSIONAL_SCHEMA, generateRecords(1, 10)).blockingAwait();
 
         /*
@@ -120,6 +125,7 @@ public class StorageClientTest {
 
     @Test
     void thatReadParquetFileFailsWhenProjectionSchemaIsNotASubsetOfOriginalSchema(TestInfo testInfo) {
+        //TODO: Find a way to create test data without depending on StorageClient
         client.writeAllData(testInfo.getDisplayName(), DIMENSIONAL_SCHEMA, generateRecords(1, 1)).blockingAwait();
         MessageType projectionSchema = MessageTypeParser.parseMessageType(
                 "message unknown {\n" +
