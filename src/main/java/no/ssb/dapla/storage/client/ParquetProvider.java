@@ -3,10 +3,8 @@ package no.ssb.dapla.storage.client;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.parquet.avro.AvroParquetReader;
 import org.apache.parquet.avro.AvroParquetWriter;
 import org.apache.parquet.example.data.Group;
-import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.ParquetReader;
 import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.hadoop.api.ReadSupport;
@@ -24,8 +22,6 @@ import java.nio.channels.Channels;
 import java.nio.channels.SeekableByteChannel;
 import java.util.Objects;
 
-import static org.apache.parquet.filter2.compat.FilterCompat.Filter;
-
 public class ParquetProvider {
 
     private Integer rowGroupSize;
@@ -36,13 +32,6 @@ public class ParquetProvider {
         this.pageSize = pageSize;
     }
 
-    /**
-     * Returns a reader for the file.
-     */
-    public ParquetFileReader getParquetFileReader(SeekableByteChannel input) throws IOException {
-        return ParquetFileReader.open(new SeekableByteChannelInputFile(input));
-    }
-
     public ParquetReader<Group> getParquetGroupReader(SeekableByteChannel input, String readSchema) throws IOException {
         SeekableByteChannelInputFile inputFile = new SeekableByteChannelInputFile(input);
 
@@ -51,13 +40,6 @@ public class ParquetProvider {
 
         return new ParquetGroupReaderBuilder(inputFile, new GroupReadSupport())
                 .withConf(conf)
-                .build();
-    }
-
-    public ParquetReader<GenericRecord> getReader(SeekableByteChannel input, Filter filter) throws IOException {
-        SeekableByteChannelInputFile inputFile = new SeekableByteChannelInputFile(input);
-        return AvroParquetReader.<GenericRecord>builder(inputFile)
-                .withFilter(filter)
                 .build();
     }
 
