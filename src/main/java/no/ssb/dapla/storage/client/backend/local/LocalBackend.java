@@ -4,16 +4,13 @@ import io.reactivex.Flowable;
 import no.ssb.dapla.storage.client.backend.BinaryBackend;
 import no.ssb.dapla.storage.client.backend.FileInfo;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.IOException;
+import java.net.URI;
 import java.nio.channels.SeekableByteChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -25,47 +22,35 @@ public class LocalBackend implements BinaryBackend {
     public Flowable<FileInfo> list(String path, Comparator<FileInfo>... comparators) throws IOException {
         Comparator<FileInfo> comparator = List.of(comparators).stream().reduce(Comparator::thenComparing).orElse(Comparator.comparing(FileInfo::getPath));
 
-        try (Stream<Path> stream = Files.walk(Paths.get(path), 1)) {
+        try (Stream<Path> stream = Files.walk(Path.of(URI.create(path)), 1)) {
             return Flowable.fromIterable(stream
-              .map((Path::toFile))
-              .map(file -> new FileInfo(file.getPath())
-                .setLastModified(file.lastModified())
-                .setDirectory(file.isDirectory())
-              )
-              .sorted(comparator)
-              .collect(Collectors.toList()));
+                    .map((Path::toFile))
+                    .map(file -> new FileInfo(file.getPath())
+                            .setLastModified(file.lastModified())
+                            .setDirectory(file.isDirectory())
+                    )
+                    .sorted(comparator)
+                    .collect(Collectors.toList()));
         }
     }
 
     @Override
-    public SeekableByteChannel read(String path) throws FileNotFoundException {
-        File file = new File(path);
-        return new FileInputStream(file).getChannel();
+    public SeekableByteChannel read(String path) throws IOException {
+        return Files.newByteChannel(Path.of(URI.create(path)), StandardOpenOption.READ);
     }
 
     @Override
     public SeekableByteChannel write(String path) throws IOException {
-        File file = new File(path);
-        File dir = file.getParentFile();
-        if (!dir.exists() && !dir.mkdirs()) {
-            throw new IOException("could not create " + dir);
-        }
-        if (!file.createNewFile()) {
-            throw new IOException("file " + file + " already exist");
-        }
-        return new FileOutputStream(file).getChannel();
+        return Files.newByteChannel(Path.of(URI.create(path)), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
     }
 
     @Override
     public void move(String from, String to) throws IOException {
-        File source = new File(from);
-        Path destination = new File(to).toPath();
-        Files.move(source.toPath(), destination, StandardCopyOption.ATOMIC_MOVE);
+        Files.move(Path.of(URI.create(from)), Path.of(URI.create(to)), StandardCopyOption.ATOMIC_MOVE);
     }
 
     @Override
     public void delete(String path) throws IOException {
-        File file = new File(path);
-        Files.delete(file.toPath());
+        Files.delete(Path.of(URI.create(path)));
     }
 }

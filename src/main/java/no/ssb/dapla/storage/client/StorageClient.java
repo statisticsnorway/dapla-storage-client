@@ -4,6 +4,7 @@ import com.google.api.client.util.Lists;
 import io.reactivex.Completable;
 import io.reactivex.Flowable;
 import io.reactivex.Observable;
+import no.ssb.dapla.dataset.uri.DatasetUri;
 import no.ssb.dapla.storage.client.backend.BinaryBackend;
 import no.ssb.dapla.storage.client.backend.FileInfo;
 import org.apache.avro.Schema;
@@ -19,6 +20,7 @@ import java.nio.channels.SeekableByteChannel;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
@@ -30,12 +32,10 @@ public class StorageClient {
 
     private final BinaryBackend backend;
     private final ParquetProvider provider;
-    private final String location;
 
     private StorageClient(Builder builder) {
         this.backend = Objects.requireNonNull(builder.binaryBackend);
         this.provider = Objects.requireNonNull(builder.parquetProvider);
-        this.location = Objects.requireNonNull(builder.location);
     }
 
     public static Builder builder() {
@@ -43,52 +43,58 @@ public class StorageClient {
     }
 
     /**
-     * Write an unbounded sequence of {@link GenericRecord}s to the bucket storage.
+     * Write an unbounded sequence of {@link GenericRecord}s to a given dataset.
      * <p>
      * The records will be written in "batches" of size count or when the timespan duration elapsed. The last value of
      * each batch is returned in an {@link Observable}.
+     * <p>
      *
-     * @param idSupplier  a supplier for the id called each time a file is flushed.
-     * @param records     the records to write.
-     * @param timeWindow  the period of time before a batch should be written.
-     * @param unit        the unit of time that applies to the timespan argument.
-     * @param countWindow the maximum size of a batch before it should be written.
+     * @param datasetUri        the dataset to write to.
+     * @param filenameGenerator a filename generator to invoke each time a file is flushed.
+     * @param records           the records to write.
+     * @param timeWindow        the period of time before a batch should be written.
+     * @param unit              the unit of time that applies to the timespan argument.
+     * @param countWindow       the maximum size of a batch before it should be written.
      * @return an {@link Observable} emitting the last record in each batch.
      */
     public <R extends GenericRecord> Observable<R> writeDataUnbounded(
-            Supplier<String> idSupplier, Schema schema, Flowable<R> records, long timeWindow, TimeUnit unit, long countWindow
+            DatasetUri datasetUri, Supplier<String> filenameGenerator, Schema schema, Flowable<R> records, long timeWindow, TimeUnit unit, long countWindow
     ) {
         return records
                 .window(timeWindow, unit, countWindow, true)
                 .switchMapMaybe(
-                        recordsWindow -> writeData(idSupplier.get(), schema, recordsWindow).lastElement()
+                        recordsWindow -> writeData(datasetUri, filenameGenerator.get(), schema, recordsWindow).lastElement()
                 )
                 .toObservable();
     }
 
     /**
-     * Write a sequence of {@link GenericRecord}s to the bucket storage.
+     * Write a sequence of {@link GenericRecord}s to a given dataset.
+     * <p>
      *
-     * @param dataId  an opaque identifier for the data.
-     * @param schema  the schema used to create the records.
-     * @param records the records to write.
+     * @param datasetUri the dataset to write to.
+     * @param filename   the name of the file in which to write.
+     * @param schema     the schema used to create the records.
+     * @param records    the records to write.
      * @return a completable that completes once the data is saved.
      */
-    public Completable writeAllData(String dataId, Schema schema, Flowable<GenericRecord> records) {
-        return writeData(dataId, schema, records).ignoreElements();
+    public Completable writeAllData(DatasetUri datasetUri, String filename, Schema schema, Flowable<GenericRecord> records) {
+        return writeData(datasetUri, filename, schema, records).ignoreElements();
     }
 
     /**
-     * Write a sequence of {@link GenericRecord}s to the bucket storage.
+     * Write a sequence of {@link GenericRecord}s to a given dataset.
+     * <p>
      *
-     * @param dataId  an opaque identifier for the data.
-     * @param schema  the schema used to create the records.
-     * @param records the records to write.
+     * @param datasetUri the dataset to write to.
+     * @param filename   the name of the file in which to write.
+     * @param schema     the schema used to create the records.
+     * @param records    the records to write.
      * @return a completable that completes once the data is saved.
      */
-    public <R extends GenericRecord> Flowable<R> writeData(String dataId, Schema schema, Flowable<R> records) {
+    public <R extends GenericRecord> Flowable<R> writeData(DatasetUri datasetUri, String filename, Schema schema, Flowable<R> records) {
         return Flowable.defer(() -> {
-            DataWriter writer = new DataWriter(dataId, schema);
+            DataWriter writer = new DataWriter(datasetUri, filename, schema);
             return records
                     .doAfterNext(writer::write)
                     .doOnComplete(writer::close)
@@ -97,35 +103,52 @@ public class StorageClient {
     }
 
     /**
-     * List the files for a given data id.
+     * List the files a given dataset is composed of.
+     * <p>
      *
-     * @param dataId the data identifier.
+     * @param datasetUri the dataset.
      * @return the files as a List of {@link FileInfo}.
      */
-    public List<FileInfo> list(String dataId) {
+    public List<FileInfo> listDatasetFiles(DatasetUri datasetUri) {
         try {
-            return Lists.newArrayList(backend.list(pathTo(dataId)).blockingIterable());
+            return Lists.newArrayList(backend.list(datasetUri.toString()).blockingIterable());
         } catch (IOException e) {
-            throw new StorageClientException(String.format("Unable to list files in path '%s'", pathTo(dataId)), e);
+            throw new StorageClientException(String.format("Unable to list files in path '%s'", datasetUri.toString()), e);
         }
     }
 
     /**
-     * Find the file that was most recently modified, ignoring directories and files with a '.tmp' suffix.
+     * List the files a given dataset is composed of, in the order in which they were modified.
+     * <p>
      *
-     * @param dataId the data identifier.
-     * @return the file as a {@link FileInfo}.
+     * @param datasetUri the dataset.
+     * @return the files as a List of {@link FileInfo}.
      */
-    public FileInfo getLastModified(String dataId) {
+    public List<FileInfo> listDatasetFilesByLastModified(DatasetUri datasetUri) {
         try {
             return backend
-                    .list(pathTo(dataId), Comparator.comparing(FileInfo::getLastModified))
+                    .list(datasetUri.toString(), Comparator.comparing(FileInfo::getLastModified))
                     .filter(fileInfo -> !fileInfo.isDirectory() && !fileInfo.hasSuffix(".tmp"))
-                    .lastElement()
+                    .toList()
                     .blockingGet();
         } catch (IOException e) {
-            throw new StorageClientException(String.format("Unable to find last modified in path '%s'", pathTo(dataId)), e);
+            throw new StorageClientException(String.format("Unable to list by last modified in path '%s'", datasetUri.toString()), e);
         }
+    }
+
+    /**
+     * Of all the files used to compose a given dataset, get the one that was modified last.
+     * <p>
+     *
+     * @param datasetUri the dataset.
+     * @return the file as a {@link Optional<FileInfo>} if the dataset has one or more files, {@link Optional#empty()} otherwise.
+     */
+    public Optional<FileInfo> getLastModifiedDatasetFile(DatasetUri datasetUri) {
+        List<FileInfo> files = listDatasetFilesByLastModified(datasetUri);
+        if (files == null || files.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(files.get(files.size() - 1));
     }
 
     /**
@@ -153,15 +176,17 @@ public class StorageClient {
      * }
      * }
      * </pre>
+     * <p>
      *
-     * @param dataId           the data identifier.
+     * @param datasetUri       the dataset to which the parquet file belongs.
+     * @param filename         the name of the parquet file.
      * @param projectionSchema the projection schema.
      * @param groupVisitor     a {@link ParquetGroupVisitor} that will be applied to each record found.
      */
-    public void readParquetFile(String dataId, MessageType projectionSchema, ParquetGroupVisitor groupVisitor) {
-        String path = pathTo(dataId);
+    public void readParquetFile(DatasetUri datasetUri, String filename, MessageType projectionSchema, ParquetGroupVisitor groupVisitor) {
+        String filePath = resolveFilePath(datasetUri, filename);
         try (
-                SeekableByteChannel channel = backend.read(path);
+                SeekableByteChannel channel = backend.read(filePath);
                 ParquetReader<Group> reader = provider.getParquetGroupReader(channel, projectionSchema.toString())
         ) {
             SimpleGroup group;
@@ -169,25 +194,26 @@ public class StorageClient {
                 groupVisitor.visit(group);
             }
         } catch (Exception e) {
-            throw new StorageClientException(String.format("Failed to read parquet file in path '%s'", path), e);
+            throw new StorageClientException(String.format("Failed to read parquet file in path '%s'", filePath), e);
         }
     }
 
     /**
-     * Return the full path to data, including location
+     * Resolve the full path to a dataset file.
      */
-    protected String pathTo(String dataId) {
-        String rootPath = location.replaceFirst("/*$", "");
-        String dataIdPath = dataId.startsWith("/") ? dataId : "/" + dataId;
-        return dataId.startsWith(rootPath) ? dataId : rootPath + dataIdPath;
+    private static String resolveFilePath(DatasetUri datasetUri, String filename) {
+        String uri = datasetUri.toString();
+        StringBuilder fileNameBuilder = new StringBuilder(uri);
+        if (!uri.endsWith("/")) {
+            fileNameBuilder.append("/");
+        }
+        return fileNameBuilder.append(filename).toString();
     }
 
     public static class Builder {
 
-        private ParquetProvider parquetProvider;
+        private ParquetProvider parquetProvider = new ParquetProvider();
         private BinaryBackend binaryBackend;
-        public String location;
-
 
         public Builder withParquetProvider(ParquetProvider parquetProvider) {
             this.parquetProvider = parquetProvider;
@@ -199,38 +225,30 @@ public class StorageClient {
             return this;
         }
 
-        public Builder withLocation(String location) {
-            this.location = location;
-            return this;
-        }
-
         public StorageClient build() {
             return new StorageClient(this);
         }
-
     }
 
     /**
      * Offers read, write and delete operations on records.
      */
     public class DataWriter implements AutoCloseable {
-        private final String tmpPath;
-        private final String path;
+        private final String file;
+        private final String tmpFile;
         private final ParquetWriter<GenericRecord> parquetWriter;
         private final AtomicInteger writeCounter = new AtomicInteger(0);
 
-        private DataWriter(String datasetId, Schema schema) throws IOException {
-            path = pathTo(datasetId);
-            tmpPath = path + ".tmp";
-            SeekableByteChannel channel = backend.write(tmpPath);
-            parquetWriter = provider.getWriter(channel, schema);
+        private DataWriter(DatasetUri datasetUri, String filename, Schema schema) throws IOException {
+            this.file = resolveFilePath(datasetUri, filename);
+            this.tmpFile = this.file + ".tmp";
+            parquetWriter = provider.getWriter(backend.write(tmpFile), schema);
         }
 
         /**
          * Write a record to storage as a parquet file.
          * <p>
-         * Note: The record might be buffered. {@link #close()} must be called afterwards to ensure all buffered records
-         * are persisted.
+         * Note: The record could be buffered. {@link #close()} must be called afterwards to ensure persistence of all buffered records.
          *
          * @param record the record to save.
          */
@@ -243,7 +261,7 @@ public class StorageClient {
             try {
                 parquetWriter.close();
             } finally {
-                backend.delete(tmpPath);
+                backend.delete(tmpFile);
             }
         }
 
@@ -256,10 +274,10 @@ public class StorageClient {
                 parquetWriter.close();
                 if (writeCounter.get() > 0) {
                     // Remove .tmp suffix from the file since at least one record has been written to it
-                    backend.move(tmpPath, path);
+                    backend.move(tmpFile, file);
                 } else {
                     // Delete the file since no records have been written to it
-                    backend.delete(tmpPath);
+                    backend.delete(tmpFile);
                     writeCounter.set(0);
                 }
 
@@ -277,10 +295,6 @@ public class StorageClient {
     public static class StorageClientException extends RuntimeException {
         public StorageClientException(String message, Throwable cause) {
             super(message, cause);
-        }
-
-        public StorageClientException(String message) {
-            super(message);
         }
     }
 }

@@ -24,8 +24,12 @@ import java.util.Objects;
 
 public class ParquetProvider {
 
-    private Integer rowGroupSize;
-    private Integer pageSize;
+    private Integer rowGroupSize = 64 * 1024 * 1024;
+    private Integer pageSize = 8 * 1024 * 1024;
+
+    public ParquetProvider() {
+
+    }
 
     public ParquetProvider(Integer rowGroupSize, Integer pageSize) {
         this.rowGroupSize = rowGroupSize;
