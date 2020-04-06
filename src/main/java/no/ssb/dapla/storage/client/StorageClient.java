@@ -207,7 +207,11 @@ public class StorageClient {
         if (!uri.endsWith("/")) {
             fileNameBuilder.append("/");
         }
-        return fileNameBuilder.append(filename).toString();
+        fileNameBuilder.append(filename);
+        if (!filename.endsWith(".parquet")) {
+            fileNameBuilder.append(".parquet");
+        }
+        return fileNameBuilder.toString();
     }
 
     public static class Builder {
