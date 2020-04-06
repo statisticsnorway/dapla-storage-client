@@ -110,11 +110,7 @@ public class StorageClient {
      * @return the files as a List of {@link FileInfo}.
      */
     public List<FileInfo> listDatasetFiles(DatasetUri datasetUri) {
-        try {
-            return Lists.newArrayList(backend.list(datasetUri.toString()).blockingIterable());
-        } catch (IOException e) {
-            throw new StorageClientException(String.format("Unable to list files in path '%s'", datasetUri.toString()), e);
-        }
+        return listDatasetFilesByLastModified(datasetUri);
     }
 
     /**
@@ -128,7 +124,7 @@ public class StorageClient {
         try {
             return backend
                     .list(datasetUri.toString(), Comparator.comparing(FileInfo::getLastModified))
-                    .filter(fileInfo -> !fileInfo.isDirectory() && !fileInfo.hasSuffix(".tmp"))
+                    .filter(fileInfo -> !fileInfo.isDirectory() && fileInfo.hasSuffix(".parquet"))
                     .toList()
                     .blockingGet();
         } catch (IOException e) {

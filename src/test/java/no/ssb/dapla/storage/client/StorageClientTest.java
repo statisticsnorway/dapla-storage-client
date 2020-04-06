@@ -71,9 +71,11 @@ class StorageClientTest {
         DatasetUri datasetUri = DatasetUri.of(testDir.toUri().toString(), "a-path", "123");
 
         Files.createDirectories(Path.of(datasetUri.toURI()));
-        Files.write(Path.of(URI.create(datasetUri.toString() + "/file-1")), "content-file-1\n".getBytes(), StandardOpenOption.CREATE);
+        Files.write(Path.of(URI.create(datasetUri.toString() + "/file-1.parquet")), "content-file-1\n".getBytes(), StandardOpenOption.CREATE);
         Thread.sleep(20L);
-        Files.write(Path.of(URI.create(datasetUri.toString() + "/file-2")), "content-file-2\n".getBytes(), StandardOpenOption.CREATE);
+        Files.write(Path.of(URI.create(datasetUri.toString() + "/file-2.parquet")), "content-file-2\n".getBytes(), StandardOpenOption.CREATE);
+        Thread.sleep(20L);
+        Files.write(Path.of(URI.create(datasetUri.toString() + "/file-3.parquet.tmp")), "content-file-2\n".getBytes(), StandardOpenOption.CREATE);
 
         StorageClient client = StorageClient.builder().withBinaryBackend(new LocalBackend()).build();
         List<FileInfo> actual = client.listDatasetFilesByLastModified(datasetUri);
