@@ -3,12 +3,20 @@ package no.ssb.dapla.storage.client.backend;
 import java.util.Objects;
 
 public class FileInfo {
+    private final String name;
     private final String path;
-    private long lastModified;
-    private boolean isDirectory;
+    private final long lastModified;
+    private final boolean isDirectory;
 
-    public FileInfo(String path) {
+    public FileInfo(String name, String path, long lastModified, boolean isDirectory) {
+        this.name = name;
         this.path = path;
+        this.lastModified = lastModified;
+        this.isDirectory = isDirectory;
+    }
+
+    public String getName() {
+        return name;
     }
 
     public String getPath() {
@@ -21,16 +29,6 @@ public class FileInfo {
 
     public boolean isDirectory() {
         return isDirectory;
-    }
-
-    public FileInfo setLastModified(long lastModified) {
-        this.lastModified = lastModified;
-        return this;
-    }
-
-    public FileInfo setDirectory(boolean directory) {
-        isDirectory = directory;
-        return this;
     }
 
     public boolean hasSuffix(String value) {

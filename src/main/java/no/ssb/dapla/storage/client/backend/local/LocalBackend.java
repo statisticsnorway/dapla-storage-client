@@ -25,10 +25,7 @@ public class LocalBackend implements BinaryBackend {
         try (Stream<Path> stream = Files.walk(Path.of(URI.create(path)), 1)) {
             return Flowable.fromIterable(stream
                     .map((Path::toFile))
-                    .map(file -> new FileInfo(file.getPath())
-                            .setLastModified(file.lastModified())
-                            .setDirectory(file.isDirectory())
-                    )
+                    .map(file -> new FileInfo(file.getName(), file.getPath(), file.lastModified(), file.isDirectory()))
                     .sorted(comparator)
                     .collect(Collectors.toList()));
         }

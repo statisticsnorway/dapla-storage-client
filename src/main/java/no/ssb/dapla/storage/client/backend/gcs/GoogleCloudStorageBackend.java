@@ -55,11 +55,11 @@ public class GoogleCloudStorageBackend implements BinaryBackend {
             return Flowable.fromIterable(pages.iterateAll());
         })
         .map(blob -> {
-            String filePath = String.format("gs://%s/%s", blob.getBucket(), blob.getName());
-            return new FileInfo(filePath)
-              .setLastModified(blob.getUpdateTime())
-              .setDirectory(blob.isDirectory()
-            );
+            String blobName = blob.getName();
+            String[] segments = blobName.split("/");
+            String filename = segments[segments.length - 1];
+            String filePath = String.format("gs://%s/%s", blob.getBucket(), blobName);
+            return new FileInfo(filename, filePath, blob.getUpdateTime(), blob.isDirectory());
         })
         .sorted(comparator);
     }
@@ -67,6 +67,9 @@ public class GoogleCloudStorageBackend implements BinaryBackend {
     @Override
     public SeekableByteChannel read(String path) throws IOException {
         Blob blob = storage.get(getBlobId(path));
+        if (blob == null) {
+            throw new NullPointerException(String.format("could not find blob in path '%s'", path));
+        }
         ReadChannel reader = blob.reader();
         reader.setChunkSize(readChunkSize);
         return new SeekableReadChannel(reader, readChunkSize, blob.getSize());

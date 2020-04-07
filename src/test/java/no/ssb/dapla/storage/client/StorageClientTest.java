@@ -80,7 +80,7 @@ class StorageClientTest {
         StorageClient client = StorageClient.builder().withBinaryBackend(new LocalBackend()).build();
         List<FileInfo> actual = client.listDatasetFilesByLastModified(datasetUri);
         assertThat(actual).hasSize(2);
-        assertThat(actual.get(1).getPath()).contains("file-2");
+        assertThat(actual.get(1).getName()).isEqualTo("file-2.parquet");
     }
 
     @Disabled("This test runs against gcs")
@@ -88,7 +88,7 @@ class StorageClientTest {
     void thatListByLastModifiedWorksInGCS() {
         DatasetUri datasetUri = DatasetUri.of("gs://dev-rawdata-store", "datastore/kilde/ske/freg/person/rådata/v123", "1585640088000");
         StorageClient client = StorageClient.builder().withBinaryBackend(new GoogleCloudStorageBackend()).build();
-        client.listDatasetFilesByLastModified(datasetUri).forEach(fileInfo -> System.out.println(fileInfo.getPath() + " @ " + fileInfo.getLastModified()));
+        client.listDatasetFilesByLastModified(datasetUri).forEach(fileInfo -> System.out.println(fileInfo.getName() + " @ " + fileInfo.getLastModified()));
     }
 
     @Test
