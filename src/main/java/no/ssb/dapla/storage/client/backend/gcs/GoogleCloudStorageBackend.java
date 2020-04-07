@@ -1,6 +1,9 @@
 package no.ssb.dapla.storage.client.backend.gcs;
 
 import com.google.api.gax.paging.Page;
+import com.google.auth.oauth2.ComputeEngineCredentials;
+import com.google.auth.oauth2.GoogleCredentials;
+import com.google.auth.oauth2.ServiceAccountCredentials;
 import com.google.cloud.ReadChannel;
 import com.google.cloud.WriteChannel;
 import com.google.cloud.storage.Blob;
@@ -19,8 +22,12 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SeekableByteChannel;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * A simple BinaryBackend for Google Cloud Storage.
@@ -32,36 +39,51 @@ public class GoogleCloudStorageBackend implements BinaryBackend {
     private final Integer readChunkSize;
 
     public GoogleCloudStorageBackend() {
-        this(new Configuration()
-          .setWriteChunkSize(128 * 1024 * 1024)
-          .setReadChunkSize(128 * 1024 * 1024)
-        );
+        this(new Configuration());
     }
 
     public GoogleCloudStorageBackend(Configuration configuration) {
-        this.storage = StorageOptions.getDefaultInstance().getService();
+        Objects.requireNonNull(configuration);
         this.writeChunkSize = configuration.getWriteChunkSize();
         this.readChunkSize = configuration.getReadChunkSize();
+        Path serviceAccountCredentials = configuration.getServiceAccountCredentials();
+
+        GoogleCredentials credentials;
+        if (serviceAccountCredentials != null) {
+            try {
+                credentials = ServiceAccountCredentials.fromStream(Files.newInputStream(serviceAccountCredentials, StandardOpenOption.READ));
+            } catch (IOException e) {
+                throw new RuntimeException(String.format("could not read service account credentials from path %s", serviceAccountCredentials.toString()), e);
+            }
+        } else {
+            credentials = ComputeEngineCredentials.create();
+        }
+        credentials = credentials.createScoped(List.of("https://www.googleapis.com/auth/devstorage.read_write"));
+
+        this.storage = StorageOptions.newBuilder()
+                .setCredentials(credentials)
+                .build()
+                .getService();
     }
 
     public Flowable<FileInfo> list(String path, Comparator<FileInfo>... comparators) throws IOException {
         BlobId id = getBlobId(path);
         Comparator<FileInfo> comparator = List.of(comparators).stream()
-          .reduce(Comparator::thenComparing)
-          .orElse(Comparator.comparing(FileInfo::getPath));
+                .reduce(Comparator::thenComparing)
+                .orElse(Comparator.comparing(FileInfo::getPath));
 
         return Flowable.defer(() -> {
             Page<Blob> pages = storage.list(id.getBucket(), Storage.BlobListOption.prefix(id.getName()));
             return Flowable.fromIterable(pages.iterateAll());
         })
-        .map(blob -> {
-            String blobName = blob.getName();
-            String[] segments = blobName.split("/");
-            String filename = segments[segments.length - 1];
-            String filePath = String.format("gs://%s/%s", blob.getBucket(), blobName);
-            return new FileInfo(filename, filePath, blob.getUpdateTime(), blob.isDirectory());
-        })
-        .sorted(comparator);
+                .map(blob -> {
+                    String blobName = blob.getName();
+                    String[] segments = blobName.split("/");
+                    String filename = segments[segments.length - 1];
+                    String filePath = String.format("gs://%s/%s", blob.getBucket(), blobName);
+                    return new FileInfo(filename, filePath, blob.getUpdateTime(), blob.isDirectory());
+                })
+                .sorted(comparator);
     }
 
     @Override
@@ -160,15 +182,16 @@ public class GoogleCloudStorageBackend implements BinaryBackend {
 
     public static class Configuration {
 
-        private Integer readChunkSize;
-        private Integer writeChunkSize;
+        private Integer readChunkSize = 128 * 1024 * 1024;
+        private Integer writeChunkSize = 128 * 1024 * 1024;
+        private Path serviceAccountCredentials = null;
 
         public Integer getReadChunkSize() {
             return readChunkSize;
         }
 
         public Configuration setReadChunkSize(Integer readChunkSize) {
-            this.readChunkSize = readChunkSize;
+            this.readChunkSize = Objects.requireNonNull(readChunkSize);
             return this;
         }
 
@@ -177,7 +200,16 @@ public class GoogleCloudStorageBackend implements BinaryBackend {
         }
 
         public Configuration setWriteChunkSize(Integer writeChunkSize) {
-            this.writeChunkSize = writeChunkSize;
+            this.writeChunkSize = Objects.requireNonNull(writeChunkSize);
+            return this;
+        }
+
+        public Path getServiceAccountCredentials() {
+            return serviceAccountCredentials;
+        }
+
+        public Configuration setServiceAccountCredentials(Path serviceAccountCredentials) {
+            this.serviceAccountCredentials = serviceAccountCredentials;
             return this;
         }
     }
