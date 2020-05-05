@@ -42,6 +42,11 @@ public class LocalBackend implements BinaryBackend {
     }
 
     @Override
+    public void write(String path, byte[] content) throws IOException {
+        Files.write(Path.of(URI.create(path)), content, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+    }
+
+    @Override
     public void move(String from, String to) throws IOException {
         Files.move(Path.of(URI.create(from)), Path.of(URI.create(to)), StandardCopyOption.ATOMIC_MOVE);
     }

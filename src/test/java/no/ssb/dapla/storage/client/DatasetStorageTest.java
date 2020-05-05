@@ -3,7 +3,7 @@ package no.ssb.dapla.storage.client;
 import io.reactivex.Flowable;
 import io.reactivex.Observable;
 import no.ssb.dapla.dataset.uri.DatasetUri;
-import no.ssb.dapla.storage.client.StorageClient.StorageClientException;
+import no.ssb.dapla.storage.client.DatasetStorage.StorageClientException;
 import no.ssb.dapla.storage.client.backend.FileInfo;
 import no.ssb.dapla.storage.client.backend.gcs.GoogleCloudStorageBackend;
 import no.ssb.dapla.storage.client.backend.local.LocalBackend;
@@ -41,7 +41,7 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class StorageClientTest {
+class DatasetStorageTest {
 
     public static final Schema DIMENSIONAL_SCHEMA = Schema.createRecord("root", "...", "no.ssb.dataset", false, List.of(
             new Schema.Field("string", Schema.create(Schema.Type.STRING), "A string", (Object) null),
@@ -77,7 +77,7 @@ class StorageClientTest {
         Thread.sleep(20L);
         Files.write(Path.of(URI.create(datasetUri.toString() + "/file-3.parquet.tmp")), "content-file-2\n".getBytes(), StandardOpenOption.CREATE);
 
-        StorageClient client = StorageClient.builder().withBinaryBackend(new LocalBackend()).build();
+        DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new LocalBackend()).build();
         List<FileInfo> actual = client.listDatasetFilesByLastModified(datasetUri);
         assertThat(actual).hasSize(2);
         assertThat(actual.get(1).getName()).isEqualTo("file-2.parquet");
@@ -87,7 +87,7 @@ class StorageClientTest {
     @Test
     void thatListByLastModifiedWorksInGCS() {
         DatasetUri datasetUri = DatasetUri.of("gs://dev-rawdata-store", "datastore/kilde/ske/freg/person/rådata/v123", "1585640088000");
-        StorageClient client = StorageClient.builder().withBinaryBackend(new GoogleCloudStorageBackend()).build();
+        DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new GoogleCloudStorageBackend()).build();
         client.listDatasetFilesByLastModified(datasetUri).forEach(fileInfo -> System.out.println(fileInfo.getName() + " @ " + fileInfo.getLastModified()));
     }
 
@@ -96,7 +96,7 @@ class StorageClientTest {
         DatasetUri datasetUri = DatasetUri.of(testDir.toUri().toString(), "me-a-path", "111");
         Files.createDirectories(Path.of(datasetUri.toURI()));
 
-        StorageClient client = StorageClient.builder().withBinaryBackend(new LocalBackend()).build();
+        DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new LocalBackend()).build();
         List<FileInfo> actual = client.listDatasetFilesByLastModified(datasetUri);
         assertThat(actual).isEmpty();
     }
@@ -105,7 +105,7 @@ class StorageClientTest {
     @Test
     void thatListByLastModifiedWorksWhenDirectoryIsEmptyInGCS() {
         DatasetUri datasetUri = DatasetUri.of("gs://dev-rawdata-store", "test", "555");
-        StorageClient client = StorageClient.builder().withBinaryBackend(new GoogleCloudStorageBackend()).build();
+        DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new GoogleCloudStorageBackend()).build();
         assertThat(client.listDatasetFilesByLastModified(datasetUri)).isEmpty();
     }
 
@@ -113,7 +113,7 @@ class StorageClientTest {
     void thatListByLastModifiedFailsWhenDirectoryDoesntExist() {
         DatasetUri datasetUri = DatasetUri.of(testDir.toUri().toString(), "me-path", "2222");
 
-        StorageClient client = StorageClient.builder().withBinaryBackend(new LocalBackend()).build();
+        DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new LocalBackend()).build();
         assertThatThrownBy(() -> client.listDatasetFilesByLastModified(datasetUri))
                 .isInstanceOf(StorageClientException.class)
                 .hasMessageContaining("Unable to list by last modified in path")
@@ -124,7 +124,7 @@ class StorageClientTest {
     @Test
     void thatListByLastModifiedWorksWhenDirectoryDoesntExistGCS() {
         DatasetUri datasetUri = DatasetUri.of("gs://dev-rawdata-store", "non-existent", "321");
-        StorageClient client = StorageClient.builder().withBinaryBackend(new GoogleCloudStorageBackend()).build();
+        DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new GoogleCloudStorageBackend()).build();
         assertThat(client.listDatasetFilesByLastModified(datasetUri)).isEmpty();
     }
 
@@ -150,7 +150,7 @@ class StorageClientTest {
         Files.createDirectories(Path.of(datasetUri.toURI()));
 
         //TODO: Find a way to create test data without relying on StorageClient
-        StorageClient client = StorageClient.builder().withBinaryBackend(new LocalBackend()).build();
+        DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new LocalBackend()).build();
         client.writeAllData(datasetUri, "a-filename", DIMENSIONAL_SCHEMA, generateRecords(1, 10)).blockingAwait();
 
         /*
@@ -180,7 +180,7 @@ class StorageClientTest {
         DatasetUri datasetUri = DatasetUri.of("gs://dev-rawdata-store", "StorageClientTest", "123");
 
         //TODO: Find a way to create test data without relying on StorageClient
-        StorageClient client = StorageClient.builder().withBinaryBackend(new GoogleCloudStorageBackend()).build();
+        DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new GoogleCloudStorageBackend()).build();
         client.writeAllData(datasetUri, "a-filename.parquet", DIMENSIONAL_SCHEMA, generateRecords(1, 10)).blockingAwait();
 
         /*
@@ -208,7 +208,7 @@ class StorageClientTest {
     @Test
     void thatGetLastModifiedDatasetFileWorksInGCS() {
         DatasetUri datasetUri = DatasetUri.of("gs://dev-rawdata-store", "StorageClientTest", "1000000");
-        StorageClient client = StorageClient.builder().withBinaryBackend(new GoogleCloudStorageBackend()).build();
+        DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new GoogleCloudStorageBackend()).build();
         FileInfo fileInfo = client.getLastModifiedDatasetFile(datasetUri).get();
         System.out.println(fileInfo.getPath());
     }
@@ -217,7 +217,7 @@ class StorageClientTest {
     @Test
     void thatGetLastModifiedDatasetFileWorksWhenDirectoryDoesntExistInGCS() {
         DatasetUri datasetUri = DatasetUri.of("gs://dev-rawdata-store", "does-not-exist", "1000000");
-        StorageClient client = StorageClient.builder().withBinaryBackend(new GoogleCloudStorageBackend()).build();
+        DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new GoogleCloudStorageBackend()).build();
         assertThat(client.getLastModifiedDatasetFile(datasetUri)).isEmpty();
     }
 
@@ -225,7 +225,7 @@ class StorageClientTest {
     @Test
     void thatGetLastModifiedDatasetFileWorksWhenDirectoryIsEmptyInGCS() {
         DatasetUri datasetUri = DatasetUri.of("gs://dev-rawdata-store", "test", "555");
-        StorageClient client = StorageClient.builder().withBinaryBackend(new GoogleCloudStorageBackend()).build();
+        DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new GoogleCloudStorageBackend()).build();
         assertThat(client.getLastModifiedDatasetFile(datasetUri)).isEmpty();
     }
 
@@ -235,7 +235,7 @@ class StorageClientTest {
         Files.createDirectories(Path.of(datasetUri.toURI()));
 
         //TODO: Find a way to create test data without depending on StorageClient
-        StorageClient client = StorageClient.builder().withBinaryBackend(new LocalBackend()).build();
+        DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new LocalBackend()).build();
         client.writeAllData(datasetUri, "just-a-filename", DIMENSIONAL_SCHEMA, generateRecords(1, 1)).blockingAwait();
 
         MessageType projectionSchema = MessageTypeParser.parseMessageType(
@@ -256,7 +256,7 @@ class StorageClientTest {
         DatasetUri datasetUri = DatasetUri.of("gs://dev-rawdata-store", "StorageClientTest", "4242");
 
         //TODO: Find a way to create test data without depending on StorageClient
-        StorageClient client = StorageClient.builder().withBinaryBackend(new GoogleCloudStorageBackend()).build();
+        DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new GoogleCloudStorageBackend()).build();
         client.writeAllData(datasetUri, "a-test-file.parquet", DIMENSIONAL_SCHEMA, generateRecords(1, 1)).blockingAwait();
 
         MessageType projectionSchema = MessageTypeParser.parseMessageType(
@@ -308,7 +308,7 @@ class StorageClientTest {
         DatasetUri datasetUri = DatasetUri.of(testDir.toUri().toString(), "whatever-filepath", "888");
         Files.createDirectories(Path.of(datasetUri.toURI()));
 
-        StorageClient client = StorageClient.builder().withBinaryBackend(new LocalBackend()).build();
+        DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new LocalBackend()).build();
         Observable<PositionedRecord> feedBack = client.writeDataUnbounded(
                 datasetUri,
                 () -> "test2-testUnbounded" + System.currentTimeMillis() + ".parquet",
@@ -361,7 +361,7 @@ class StorageClientTest {
                 }
         );
 
-        StorageClient client = StorageClient.builder().withBinaryBackend(new GoogleCloudStorageBackend()).build();
+        DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new GoogleCloudStorageBackend()).build();
         DatasetUri datasetUri = DatasetUri.of("gs://dev-rawdata-store", "StorageClientTest", "1000000");
 
         Observable<PositionedRecord> feedBack = client.writeDataUnbounded(

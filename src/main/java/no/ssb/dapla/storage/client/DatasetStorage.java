@@ -1,6 +1,5 @@
 package no.ssb.dapla.storage.client;
 
-import com.google.api.client.util.Lists;
 import io.reactivex.Completable;
 import io.reactivex.Flowable;
 import io.reactivex.Observable;
@@ -26,14 +25,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 /**
- * StorageClient is an abstraction to read and write Parquet files on bucket storage.
+ * DatasetStorageClient provides methods for reading and writing datasets
  */
-public class StorageClient {
+public class DatasetStorage {
 
     private final BinaryBackend backend;
     private final ParquetProvider provider;
 
-    private StorageClient(Builder builder) {
+    private DatasetStorage(Builder builder) {
         this.backend = Objects.requireNonNull(builder.binaryBackend);
         this.provider = Objects.requireNonNull(builder.parquetProvider);
     }
@@ -225,8 +224,8 @@ public class StorageClient {
             return this;
         }
 
-        public StorageClient build() {
-            return new StorageClient(this);
+        public DatasetStorage build() {
+            return new DatasetStorage(this);
         }
     }
 

@@ -15,6 +15,15 @@ public interface BinaryBackend {
 
     SeekableByteChannel write(String path) throws IOException;
 
+    /**
+     * Write a series of bytes to a file. The file will be created if it doesn't already exist, and if the file already
+     * exists any bytes within will be overwritten.
+     *
+     * @param path a full file path, including schema, e.g gs://storage-bucket/a-file.txt
+     * @param content the content as an array of bytes
+     */
+    void write(String path, byte[] content) throws IOException;
+
     void move(String from, String to) throws IOException;
 
     void delete(String path) throws IOException;

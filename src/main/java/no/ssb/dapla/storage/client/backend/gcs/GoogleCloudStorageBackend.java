@@ -98,6 +98,16 @@ public class GoogleCloudStorageBackend implements BinaryBackend {
     }
 
     @Override
+    public void write(String path, byte[] content) throws IOException {
+        BlobInfo blobInfo = BlobInfo.newBuilder(getBlobId(path)).setContentType("text/plain").build();
+        try (WriteChannel writer = storage.writer(blobInfo)) {
+            writer.write(ByteBuffer.wrap(content, 0, content.length));
+        } catch (Exception e) {
+            throw new RuntimeException(String.format("failed to write to path %s", path), e);
+        }
+    }
+
+    @Override
     public SeekableByteChannel write(String path) throws IOException {
         Blob blob = storage.create(BlobInfo.newBuilder(getBlobId(path)).build());
         WriteChannel writer = blob.writer();
@@ -154,7 +164,7 @@ public class GoogleCloudStorageBackend implements BinaryBackend {
     public void move(String from, String to) throws IOException {
         Blob fromBlob = storage.get(getBlobId(from));
         CopyWriter copyWriter = fromBlob.copyTo(getBlobId(to));
-        copyWriter.getResult(); // So we block.
+        copyWriter.getResult();
         fromBlob.delete();
     }
 
