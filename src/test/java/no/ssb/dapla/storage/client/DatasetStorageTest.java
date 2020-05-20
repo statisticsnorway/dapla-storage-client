@@ -3,7 +3,6 @@ package no.ssb.dapla.storage.client;
 import io.reactivex.Flowable;
 import io.reactivex.Observable;
 import no.ssb.dapla.dataset.uri.DatasetUri;
-import no.ssb.dapla.storage.client.DatasetStorage.StorageClientException;
 import no.ssb.dapla.storage.client.backend.FileInfo;
 import no.ssb.dapla.storage.client.backend.gcs.GoogleCloudStorageBackend;
 import no.ssb.dapla.storage.client.backend.local.LocalBackend;
@@ -115,7 +114,7 @@ class DatasetStorageTest {
 
         DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new LocalBackend()).build();
         assertThatThrownBy(() -> client.listDatasetFilesByLastModified(datasetUri))
-                .isInstanceOf(StorageClientException.class)
+                .isInstanceOf(DatasetStorageException.class)
                 .hasMessageContaining("Unable to list by last modified in path")
                 .hasCauseInstanceOf(NoSuchFileException.class);
     }
@@ -245,7 +244,7 @@ class DatasetStorageTest {
         );
 
         assertThatThrownBy(() -> client.readParquetFile(datasetUri, "just-a-filename", projectionSchema, SimpleGroup::toString))
-                .isInstanceOf(StorageClientException.class)
+                .isInstanceOf(DatasetStorageException.class)
                 .hasMessageContaining("Failed to read parquet file in path")
                 .hasCauseInstanceOf(InvalidRecordException.class);
     }
@@ -266,7 +265,7 @@ class DatasetStorageTest {
         );
 
         assertThatThrownBy(() -> client.readParquetFile(datasetUri, "a-test-file.parquet", projectionSchema, SimpleGroup::toString))
-                .isInstanceOf(StorageClientException.class)
+                .isInstanceOf(DatasetStorageException.class)
                 .hasMessageContaining("Failed to read parquet file in path")
                 .hasCauseInstanceOf(InvalidRecordException.class);
     }

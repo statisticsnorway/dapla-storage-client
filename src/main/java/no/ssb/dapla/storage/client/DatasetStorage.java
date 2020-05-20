@@ -13,6 +13,8 @@ import org.apache.parquet.example.data.simple.SimpleGroup;
 import org.apache.parquet.hadoop.ParquetReader;
 import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.schema.MessageType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.channels.SeekableByteChannel;
@@ -28,13 +30,15 @@ import java.util.function.Supplier;
  * DatasetStorageClient provides methods for reading and writing datasets
  */
 public class DatasetStorage {
-
+    private static final Logger log = LoggerFactory.getLogger(DatasetStorage.class);
     private final BinaryBackend backend;
     private final ParquetProvider provider;
+    private final WriteExceptionHandler writeExceptionHandler;
 
     private DatasetStorage(Builder builder) {
         this.backend = Objects.requireNonNull(builder.binaryBackend);
         this.provider = Objects.requireNonNull(builder.parquetProvider);
+        this.writeExceptionHandler = builder.writeExceptionHandler;
     }
 
     public static Builder builder() {
@@ -127,7 +131,7 @@ public class DatasetStorage {
                     .toList()
                     .blockingGet();
         } catch (IOException e) {
-            throw new StorageClientException(String.format("Unable to list by last modified in path '%s'", datasetUri.toString()), e);
+            throw new DatasetStorageException(String.format("Unable to list by last modified in path '%s'", datasetUri.toString()), e);
         }
     }
 
@@ -189,7 +193,7 @@ public class DatasetStorage {
                 groupVisitor.visit(group);
             }
         } catch (Exception e) {
-            throw new StorageClientException(String.format("Failed to read parquet file in path '%s'", filePath), e);
+            throw new DatasetStorageException(String.format("Failed to read parquet file in path '%s'", filePath), e);
         }
     }
 
@@ -213,6 +217,7 @@ public class DatasetStorage {
 
         private ParquetProvider parquetProvider = new ParquetProvider();
         private BinaryBackend binaryBackend;
+        private WriteExceptionHandler writeExceptionHandler;
 
         public Builder withParquetProvider(ParquetProvider parquetProvider) {
             this.parquetProvider = parquetProvider;
@@ -221,6 +226,11 @@ public class DatasetStorage {
 
         public Builder withBinaryBackend(BinaryBackend binaryBackend) {
             this.binaryBackend = binaryBackend;
+            return this;
+        }
+
+        public Builder withWriteExceptionHandler(WriteExceptionHandler writeExceptionHandler) {
+            this.writeExceptionHandler = writeExceptionHandler;
             return this;
         }
 
@@ -251,9 +261,30 @@ public class DatasetStorage {
          *
          * @param record the record to save.
          */
-        public void write(GenericRecord record) throws IOException {
+        public void write(GenericRecord record) {
             writeCounter.incrementAndGet();
-            parquetWriter.write(record);
+            try {
+                this.writeParquet(record);
+            }
+            catch (Exception e) {
+                if (writeExceptionHandler != null) {
+                    writeExceptionHandler.handleException(e, record)
+                      .ifPresent(this::writeParquet);
+                }
+                else {
+                    log.error("Failed to write GenericRecord:\n{}", record.toString());
+                    throw new DatasetStorageException("Error writing GenericRecord", e);
+                }
+            }
+        }
+
+        private void writeParquet(GenericRecord record) {
+            try {
+                parquetWriter.write(record);
+            }
+            catch (IOException e) {
+                throw new DatasetStorageException(e);
+            }
         }
 
         public void cancel() throws IOException {
@@ -291,9 +322,4 @@ public class DatasetStorage {
         }
     }
 
-    public static class StorageClientException extends RuntimeException {
-        public StorageClientException(String message, Throwable cause) {
-            super(message, cause);
-        }
-    }
 }
