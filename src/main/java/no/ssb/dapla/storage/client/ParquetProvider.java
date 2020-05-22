@@ -4,6 +4,7 @@ import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.parquet.avro.AvroParquetWriter;
+import org.apache.parquet.avro.AvroWriteSupport;
 import org.apache.parquet.example.data.Group;
 import org.apache.parquet.hadoop.ParquetReader;
 import org.apache.parquet.hadoop.ParquetWriter;
@@ -49,7 +50,10 @@ public class ParquetProvider {
 
     public ParquetWriter<GenericRecord> getWriter(SeekableByteChannel output, Schema schema) throws IOException {
         SeekableByteChannelOutputFile outputFile = new SeekableByteChannelOutputFile(output);
+        Configuration conf = new Configuration();
+        conf.setBoolean(AvroWriteSupport.WRITE_OLD_LIST_STRUCTURE, false);
         return AvroParquetWriter.<GenericRecord>builder(outputFile).withSchema(schema)
+                .withConf(conf)
                 .withCompressionCodec(CompressionCodecName.SNAPPY)
                 .withPageSize(pageSize)
                 .withRowGroupSize(rowGroupSize)
