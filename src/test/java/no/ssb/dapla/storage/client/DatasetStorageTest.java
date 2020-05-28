@@ -147,6 +147,7 @@ class DatasetStorageTest {
     void thatReadParquetGroupWithProjectionSchemaWorks() throws IOException {
         DatasetUri datasetUri = DatasetUri.of(testDir.toUri().toString(), "a-filepath", "789");
         Files.createDirectories(Path.of(datasetUri.toURI()));
+        Files.createDirectory(Path.of(URI.create(datasetUri.getParentUri() + "/tmp")));
 
         //TODO: Find a way to create test data without relying on StorageClient
         DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new LocalBackend()).build();
@@ -232,6 +233,7 @@ class DatasetStorageTest {
     void thatReadParquetFileFailsWhenProjectionSchemaIsNotASubsetOfOriginalSchema() throws IOException {
         DatasetUri datasetUri = DatasetUri.of(testDir.toUri().toString(), "some-filepath", "456");
         Files.createDirectories(Path.of(datasetUri.toURI()));
+        Files.createDirectory(Path.of(URI.create(datasetUri.getParentUri() + "/tmp")));
 
         //TODO: Find a way to create test data without depending on StorageClient
         DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new LocalBackend()).build();
@@ -306,6 +308,7 @@ class DatasetStorageTest {
 
         DatasetUri datasetUri = DatasetUri.of(testDir.toUri().toString(), "whatever-filepath", "888");
         Files.createDirectories(Path.of(datasetUri.toURI()));
+        Files.createDirectory(Path.of(URI.create(datasetUri.getParentUri() + "/tmp")));
 
         DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new LocalBackend()).build();
         Observable<PositionedRecord> feedBack = client.writeDataUnbounded(

@@ -243,15 +243,28 @@ public class DatasetStorage {
      * Offers read, write and delete operations on records.
      */
     public class DataWriter implements AutoCloseable {
-        private final String file;
+
+        // Full path - including filename - to the parquet file that will hold the records
+        private final String dataFile;
+
+        // Full path - including filename - to a temporary file used to buffer records
         private final String tmpFile;
         private final ParquetWriter<GenericRecord> parquetWriter;
         private final AtomicInteger writeCounter = new AtomicInteger(0);
 
         private DataWriter(DatasetUri datasetUri, String filename, Schema schema) throws IOException {
-            this.file = resolveFilePath(datasetUri, filename);
-            this.tmpFile = this.file + ".tmp";
-            parquetWriter = provider.getWriter(backend.write(tmpFile), schema);
+            String fullFileName = filename;
+            if (!fullFileName.endsWith(".parquet")) {
+                fullFileName = fullFileName + ".parquet";
+            }
+            this.tmpFile = datasetUri.getParentUri() + "/tmp/" + fullFileName;
+
+            String pathToDataFile = datasetUri.toString();
+            if (!pathToDataFile.endsWith("/")) {
+                pathToDataFile = pathToDataFile + "/";
+            }
+            this.dataFile = pathToDataFile + fullFileName;
+            this.parquetWriter = provider.getWriter(backend.write(tmpFile), schema);
         }
 
         /**
@@ -265,13 +278,10 @@ public class DatasetStorage {
             writeCounter.incrementAndGet();
             try {
                 this.writeParquet(record);
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                 if (writeExceptionHandler != null) {
-                    writeExceptionHandler.handleException(e, record)
-                      .ifPresent(this::writeParquet);
-                }
-                else {
+                    writeExceptionHandler.handleException(e, record).ifPresent(this::writeParquet);
+                } else {
                     log.error("Failed to write GenericRecord:\n{}", record.toString());
                     throw new DatasetStorageException("Error writing GenericRecord", e);
                 }
@@ -281,8 +291,7 @@ public class DatasetStorage {
         private void writeParquet(GenericRecord record) {
             try {
                 parquetWriter.write(record);
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
                 throw new DatasetStorageException(e);
             }
         }
@@ -303,10 +312,10 @@ public class DatasetStorage {
             try {
                 parquetWriter.close();
                 if (writeCounter.get() > 0) {
-                    // Remove .tmp suffix from the file since at least one record has been written to it
-                    backend.move(tmpFile, file);
+                    // Temp file contains at least one record, rename it to make it accessible
+                    backend.move(tmpFile, dataFile);
                 } else {
-                    // Delete the file since no records have been written to it
+                    // Temp file is empty, delete it
                     backend.delete(tmpFile);
                     writeCounter.set(0);
                 }
