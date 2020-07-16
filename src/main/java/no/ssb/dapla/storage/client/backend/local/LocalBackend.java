@@ -38,7 +38,9 @@ public class LocalBackend implements BinaryBackend {
 
     @Override
     public SeekableByteChannel write(String path) throws IOException {
-        return Files.newByteChannel(Path.of(URI.create(path)), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+        Path filePath = Path.of(URI.create(path));
+        Files.createDirectories(filePath.getParent()); //Create sub directories
+        return Files.newByteChannel(filePath, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
     }
 
     @Override
@@ -48,7 +50,9 @@ public class LocalBackend implements BinaryBackend {
 
     @Override
     public void move(String from, String to) throws IOException {
-        Files.move(Path.of(URI.create(from)), Path.of(URI.create(to)), StandardCopyOption.ATOMIC_MOVE);
+        Path target = Path.of(URI.create(to));
+        Files.createDirectories(target.getParent()); //Create sub directories
+        Files.move(Path.of(URI.create(from)), target, StandardCopyOption.ATOMIC_MOVE);
     }
 
     @Override
