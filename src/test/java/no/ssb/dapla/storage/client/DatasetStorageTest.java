@@ -26,43 +26,312 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
-import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static java.util.Collections.singletonList;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class DatasetStorageTest {
 
-    public static final Schema DIMENSIONAL_SCHEMA = Schema.createRecord("root", "...", "no.ssb.dataset", false, List.of(
-            new Schema.Field("string", Schema.create(Schema.Type.STRING), "A string", (Object) null),
-            new Schema.Field("int", Schema.create(Schema.Type.INT), "An int", (Object) null),
-            new Schema.Field("boolean", Schema.create(Schema.Type.BOOLEAN), "A boolean", (Object) null),
-            new Schema.Field("float", Schema.create(Schema.Type.FLOAT), "A float", (Object) null),
-            new Schema.Field("long", Schema.create(Schema.Type.LONG), "A long", (Object) null),
-            new Schema.Field("double", Schema.create(Schema.Type.DOUBLE), "A double", (Object) null)
-    ));
+    private static final Schema SCHEMA = new Schema.Parser().parse("{\n" +
+            "  \"type\": \"record\",\n" +
+            "  \"name\": \"root\",\n" +
+            "  \"namespace\": \"no.ssb.dataset\",\n" +
+            "  \"doc\": \"...\",\n" +
+            "  \"fields\": [\n" +
+            "    {\n" +
+            "      \"name\": \"string\",\n" +
+            "      \"type\": \"string\",\n" +
+            "      \"doc\": \"A string\"\n" +
+            "    },\n" +
+            "    {\n" +
+            "      \"name\": \"int\",\n" +
+            "      \"type\": \"int\",\n" +
+            "      \"doc\": \"An int\"\n" +
+            "    },\n" +
+            "    {\n" +
+            "      \"name\": \"boolean\",\n" +
+            "      \"type\": \"boolean\",\n" +
+            "      \"doc\": \"A boolean\"\n" +
+            "    },\n" +
+            "    {\n" +
+            "      \"name\": \"float\",\n" +
+            "      \"type\": \"float\",\n" +
+            "      \"doc\": \"A float\"\n" +
+            "    },\n" +
+            "    {\n" +
+            "      \"name\": \"long\",\n" +
+            "      \"type\": \"long\",\n" +
+            "      \"doc\": \"A long\"\n" +
+            "    },\n" +
+            "    {\n" +
+            "      \"name\": \"double\",\n" +
+            "      \"type\": \"double\",\n" +
+            "      \"doc\": \"A double\"\n" +
+            "    }\n" +
+            "  ]\n" +
+            "}");
 
     private GenericRecordBuilder recordBuilder;
     private Path testDir;
 
     @BeforeEach
     void setUp() throws IOException {
-        testDir = Files.createTempDirectory("StorageClientTest");
-        recordBuilder = new GenericRecordBuilder(DIMENSIONAL_SCHEMA);
+        testDir = Files.createTempDirectory("DatasetStorageTest");
+        recordBuilder = new GenericRecordBuilder(SCHEMA);
     }
 
     @AfterEach
     void tearDown() throws IOException {
         FileUtils.deleteDirectory(testDir.toFile());
+    }
+
+    @Test
+    void thatFailingRecordsCanBeSkippedWithAnExceptionHandler() {
+        /*
+        Schema with array that doesn't allow null values
+         */
+        Schema schema = new Schema.Parser().parse("{\n" +
+                "  \"type\": \"record\",\n" +
+                "  \"name\": \"person\",\n" +
+                "  \"fields\": [\n" +
+                "    {\n" +
+                "      \"name\": \"address\",\n" +
+                "      \"type\": [\n" +
+                "        \"null\",\n" +
+                "        {\n" +
+                "          \"type\": \"array\",\n" +
+                "          \"items\": \"string\"\n" +
+                "        }\n" +
+                "      ],\n" +
+                "      \"default\": null\n" +
+                "    }\n" +
+                "  ]\n" +
+                "}");
+
+        //Trigger exception by attempting to write a record with null value in array
+        Flowable<GenericData.Record> records = asFlowable(
+                new GenericRecordBuilder(schema).set("address", singletonList("1")).build(),
+                new GenericRecordBuilder(schema).set("address", Arrays.asList("2", null, "foo")).build(),
+                new GenericRecordBuilder(schema).set("address", singletonList("3")).build()
+        );
+
+        // Use an exception handler to ignore and skip failing records
+        DatasetStorage client = DatasetStorage.builder()
+                .withWriteExceptionHandler((e, record) -> Optional.empty())
+                .withBinaryBackend(new LocalBackend())
+                .build();
+
+        DatasetUri uri = DatasetUri.of(testDir.toUri().toString(), "just-a-path", "897");
+
+        //Write records
+        client.writeDataUnbounded(uri, schema, records, 300, TimeUnit.SECONDS, 1000)
+                .subscribe(
+                        record -> {
+                        },
+                        throwable -> {
+                        }
+                );
+
+        //Read back records
+        List<GenericRecord> got = client.readAvroRecords(uri);
+
+        //All the *valid* records should have been written
+        assertThat(got).containsExactlyInAnyOrder(
+                new GenericRecordBuilder(schema).set("address", singletonList("1")).build(),
+                new GenericRecordBuilder(schema).set("address", singletonList("3")).build()
+        );
+    }
+
+    @Test
+    void thatWhenARecordFailsTheRecordsPrecedingItAreKept() {
+        /*
+        Schema with array that doesn't allow null values
+         */
+        Schema schema = new Schema.Parser().parse("{\n" +
+                "  \"type\": \"record\",\n" +
+                "  \"name\": \"person\",\n" +
+                "  \"fields\": [\n" +
+                "    {\n" +
+                "      \"name\": \"address\",\n" +
+                "      \"type\": [\n" +
+                "        \"null\",\n" +
+                "        {\n" +
+                "          \"type\": \"array\",\n" +
+                "          \"items\": \"string\"\n" +
+                "        }\n" +
+                "      ],\n" +
+                "      \"default\": null\n" +
+                "    }\n" +
+                "  ]\n" +
+                "}");
+
+        //Trigger exception by attempting to write a record with null value in array
+        Flowable<GenericData.Record> records = asFlowable(
+                new GenericRecordBuilder(schema).set("address", singletonList("1")).build(),
+                new GenericRecordBuilder(schema).set("address", Arrays.asList("2", null, "foo")).build(),
+                new GenericRecordBuilder(schema).set("address", singletonList("3")).build()
+        );
+
+        DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new LocalBackend()).build();
+
+        DatasetUri uri = DatasetUri.of(testDir.toUri().toString(), "just-a-path", "897");
+
+        //Write records
+        client.writeDataUnbounded(uri, schema, records, 300, TimeUnit.SECONDS, 1000)
+                .subscribe(
+                        record -> {
+                        },
+                        throwable -> {
+                        }
+                );
+
+        //Read back records
+        List<GenericRecord> got = client.readAvroRecords(uri);
+
+        //The first record should have been written
+        assertThat(got).containsExactlyInAnyOrder(new GenericRecordBuilder(schema).set("address", singletonList("1")).build());
+    }
+
+    @Test
+    void thatConsecutiveInvalidRecordsWork() {
+        /*
+        Schema with array that doesn't allow null values
+         */
+        Schema schema = new Schema.Parser().parse("{\n" +
+                "  \"type\": \"record\",\n" +
+                "  \"name\": \"person\",\n" +
+                "  \"fields\": [\n" +
+                "    {\n" +
+                "      \"name\": \"address\",\n" +
+                "      \"type\": [\n" +
+                "        \"null\",\n" +
+                "        {\n" +
+                "          \"type\": \"array\",\n" +
+                "          \"items\": \"string\"\n" +
+                "        }\n" +
+                "      ],\n" +
+                "      \"default\": null\n" +
+                "    }\n" +
+                "  ]\n" +
+                "}");
+
+        //Trigger exception by attempting to write a records with null values in array
+        Flowable<GenericData.Record> records = asFlowable(
+                new GenericRecordBuilder(schema).set("address", Arrays.asList("1", null, "foo")).build(),
+                new GenericRecordBuilder(schema).set("address", Arrays.asList(null, "bar")).build()
+        );
+
+        // Use an exception handler to ignore and skip failing records
+        DatasetStorage client = DatasetStorage.builder()
+                .withWriteExceptionHandler((e, record) -> Optional.empty())
+                .withBinaryBackend(new LocalBackend())
+                .build();
+
+        DatasetUri uri = DatasetUri.of(testDir.toUri().toString(), "just-a-path", "897");
+
+        //Write records
+        client.writeDataUnbounded(uri, schema, records, 300, TimeUnit.SECONDS, 1000)
+                .subscribe(
+                        record -> {
+                        },
+                        throwable -> {
+                        }
+                );
+
+        //Read back records
+        List<GenericRecord> got = client.readAvroRecords(uri);
+
+        assertThat(got).isEmpty();
+    }
+
+    @Test
+    void thatWeAreAbleToSkipRecordsAcrossWindows() {
+        /*
+        Schema with array that doesn't allow null values
+         */
+        Schema schema = new Schema.Parser().parse("{\n" +
+                "  \"type\": \"record\",\n" +
+                "  \"name\": \"person\",\n" +
+                "  \"fields\": [\n" +
+                "    {\n" +
+                "      \"name\": \"address\",\n" +
+                "      \"type\": [\n" +
+                "        \"null\",\n" +
+                "        {\n" +
+                "          \"type\": \"array\",\n" +
+                "          \"items\": \"string\"\n" +
+                "        }\n" +
+                "      ],\n" +
+                "      \"default\": null\n" +
+                "    }\n" +
+                "  ]\n" +
+                "}");
+
+        //Trigger exception by attempting to write a records with null values in array
+        Flowable<GenericData.Record> records = asFlowable(
+                new GenericRecordBuilder(schema).set("address", Arrays.asList("1", null)).build(),
+                new GenericRecordBuilder(schema).set("address", singletonList("bar")).build(),
+                new GenericRecordBuilder(schema).set("address", Arrays.asList("2", null)).build(),
+                new GenericRecordBuilder(schema).set("address", singletonList("abc")).build(),
+                new GenericRecordBuilder(schema).set("address", Arrays.asList(null, "def")).build(),
+                new GenericRecordBuilder(schema).set("address", singletonList("ghi")).build()
+        );
+
+        // Use an exception handler to ignore and skip failing records
+        DatasetStorage client = DatasetStorage.builder()
+                .withWriteExceptionHandler((e, record) -> Optional.empty())
+                .withBinaryBackend(new LocalBackend())
+                .build();
+
+        DatasetUri uri = DatasetUri.of(testDir.toUri().toString(), "just-a-path", "4242");
+
+        //Write with a count window of 3 records
+        client.writeDataUnbounded(uri, schema, records, 300, TimeUnit.SECONDS, 3)
+                .subscribe(
+                        record -> {
+                        },
+                        throwable -> {
+                            throwable.printStackTrace();
+                        }
+                );
+
+        //Read back records
+        List<GenericRecord> got = client.readAvroRecords(uri);
+        assertThat(got)
+                .containsExactlyInAnyOrder(
+                        new GenericRecordBuilder(schema).set("address", singletonList("bar")).build(),
+                        new GenericRecordBuilder(schema).set("address", singletonList("abc")).build(),
+                        new GenericRecordBuilder(schema).set("address", singletonList("ghi")).build()
+                );
+    }
+
+    private static Flowable<GenericData.Record> asFlowable(GenericData.Record... records) {
+        AtomicInteger counter = new AtomicInteger(0);
+        return Flowable.generate(emitter -> {
+            if (counter.get() < records.length) {
+                emitter.onNext(records[counter.getAndIncrement()]);
+                try {
+                    Thread.sleep(5);
+                } catch (InterruptedException ie) {
+                    Thread.interrupted();
+                }
+            } else {
+                emitter.onComplete();
+            }
+        });
     }
 
     @Test
@@ -113,10 +382,7 @@ class DatasetStorageTest {
         DatasetUri datasetUri = DatasetUri.of(testDir.toUri().toString(), "me-path", "2222");
 
         DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new LocalBackend()).build();
-        assertThatThrownBy(() -> client.listDatasetFilesByLastModified(datasetUri))
-                .isInstanceOf(DatasetStorageException.class)
-                .hasMessageContaining("Unable to list by last modified in path")
-                .hasCauseInstanceOf(NoSuchFileException.class);
+        assertThat(client.listDatasetFilesByLastModified(datasetUri)).isEmpty();
     }
 
     @Disabled("This test runs against gcs")
@@ -127,31 +393,15 @@ class DatasetStorageTest {
         assertThat(client.listDatasetFilesByLastModified(datasetUri)).isEmpty();
     }
 
-    @Disabled("See FIXME in test method")
     @Test
-    void testReadWrite() {
-
-//        Flowable<GenericRecord> records = generateRecords(1, 100);
-//        client.writeAllData("test", DIMENSIONAL_SCHEMA, records).blockingAwait();
-
-        //FIXME: Don't use StorageClient to validate test result as this is the class we're testing
-//        List<GenericRecord> readRecords = client.readData("test", null).toList().blockingGet();
-
-//        assertThat(readRecords)
-//                .usingElementComparator(Comparator.comparing(r -> ((Integer) r.get("int"))))
-//                .containsExactlyInAnyOrderElementsOf(records.toList().blockingGet());
-
-    }
-
-    @Test
-    void thatReadParquetGroupWithProjectionSchemaWorks() throws IOException {
+    void thatReadParquetGroupWithProjectionSchemaWorks() {
         DatasetUri datasetUri = DatasetUri.of(testDir.toUri().toString(), "a-filepath", "789");
-        Files.createDirectories(Path.of(datasetUri.toURI()));
-        Files.createDirectory(Path.of(URI.create(datasetUri.getParentUri() + "/tmp")));
 
         //TODO: Find a way to create test data without relying on StorageClient
         DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new LocalBackend()).build();
-        client.writeAllData(datasetUri, "a-filename", DIMENSIONAL_SCHEMA, generateRecords(1, 10)).blockingAwait();
+        client.writeAllData(datasetUri, SCHEMA, generateRecords(1, 10)).blockingAwait();
+
+        String file = client.listDatasetFilesByLastModified(datasetUri).get(0).getName();
 
         /*
           message no.ssb.dataset.root {
@@ -168,7 +418,7 @@ class DatasetStorageTest {
         );
 
         List<String> values = new ArrayList<>();
-        client.readParquetFile(datasetUri, "a-filename", projectionSchema, group -> {
+        client.readParquetFile(datasetUri, file, projectionSchema, group -> {
             values.add(group.getValueToString(0, 0));
         });
         assertThat(values).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10");
@@ -181,7 +431,7 @@ class DatasetStorageTest {
 
         //TODO: Find a way to create test data without relying on StorageClient
         DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new GoogleCloudStorageBackend()).build();
-        client.writeAllData(datasetUri, "a-filename.parquet", DIMENSIONAL_SCHEMA, generateRecords(1, 10)).blockingAwait();
+        client.writeAllData(datasetUri, SCHEMA, generateRecords(1, 10)).blockingAwait();
 
         /*
           message no.ssb.dataset.root {
@@ -237,7 +487,9 @@ class DatasetStorageTest {
 
         //TODO: Find a way to create test data without depending on StorageClient
         DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new LocalBackend()).build();
-        client.writeAllData(datasetUri, "just-a-filename", DIMENSIONAL_SCHEMA, generateRecords(1, 1)).blockingAwait();
+        client.writeAllData(datasetUri, SCHEMA, generateRecords(1, 1)).blockingAwait();
+
+        String file = client.listDatasetFilesByLastModified(datasetUri).get(0).getName();
 
         MessageType projectionSchema = MessageTypeParser.parseMessageType(
                 "message unknown {\n" +
@@ -245,7 +497,7 @@ class DatasetStorageTest {
                         "}"
         );
 
-        assertThatThrownBy(() -> client.readParquetFile(datasetUri, "just-a-filename", projectionSchema, SimpleGroup::toString))
+        assertThatThrownBy(() -> client.readParquetFile(datasetUri, file, projectionSchema, SimpleGroup::toString))
                 .isInstanceOf(DatasetStorageException.class)
                 .hasMessageContaining("Failed to read parquet file in path")
                 .hasCauseInstanceOf(InvalidRecordException.class);
@@ -258,7 +510,7 @@ class DatasetStorageTest {
 
         //TODO: Find a way to create test data without depending on StorageClient
         DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new GoogleCloudStorageBackend()).build();
-        client.writeAllData(datasetUri, "a-test-file.parquet", DIMENSIONAL_SCHEMA, generateRecords(1, 1)).blockingAwait();
+        client.writeAllData(datasetUri, SCHEMA, generateRecords(1, 1)).blockingAwait();
 
         MessageType projectionSchema = MessageTypeParser.parseMessageType(
                 "message unknown {\n" +
@@ -293,7 +545,7 @@ class DatasetStorageTest {
         });
 
         // Convert to record that contains extra information.
-        Flowable<PositionedRecord> recordFlowable = unlimitedFlowable.map(
+        Flowable<PositionedRecord> records = unlimitedFlowable.map(
                 income -> {
                     GenericData.Record record = recordBuilder
                             .set("string", income.toString())
@@ -312,13 +564,7 @@ class DatasetStorageTest {
 
         DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new LocalBackend()).build();
         Observable<PositionedRecord> feedBack = client.writeDataUnbounded(
-                datasetUri,
-                () -> "test2-testUnbounded" + System.currentTimeMillis() + ".parquet",
-                DIMENSIONAL_SCHEMA,
-                recordFlowable,
-                1,
-                TimeUnit.MINUTES,
-                10
+                datasetUri, SCHEMA, records, 1, TimeUnit.MINUTES, 10
         );
 
         List<Long> positions = feedBack.map(positionedRecord -> positionedRecord.getPosition()).toList().blockingGet();
@@ -350,7 +596,7 @@ class DatasetStorageTest {
         });
 
         // Convert to record that contains extra information.
-        Flowable<PositionedRecord> recordFlowable = unlimitedFlowable.map(
+        Flowable<PositionedRecord> records = unlimitedFlowable.map(
                 income -> {
                     GenericData.Record record = recordBuilder
                             .set("string", income.toString())
@@ -367,13 +613,7 @@ class DatasetStorageTest {
         DatasetUri datasetUri = DatasetUri.of("gs://dev-rawdata-store", "StorageClientTest", "1000000");
 
         Observable<PositionedRecord> feedBack = client.writeDataUnbounded(
-                datasetUri,
-                () -> "test2-testUnbounded" + System.currentTimeMillis() + ".parquet",
-                DIMENSIONAL_SCHEMA,
-                recordFlowable,
-                1,
-                TimeUnit.MINUTES,
-                10
+                datasetUri, SCHEMA, records, 1, TimeUnit.MINUTES, 10
         );
 
         List<Long> positions = feedBack.map(positionedRecord -> positionedRecord.getPosition()).toList().blockingGet();

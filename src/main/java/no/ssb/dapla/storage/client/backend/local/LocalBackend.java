@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.channels.SeekableByteChannel;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
@@ -22,41 +23,51 @@ public class LocalBackend implements BinaryBackend {
     public Flowable<FileInfo> list(String path, Comparator<FileInfo>... comparators) throws IOException {
         Comparator<FileInfo> comparator = List.of(comparators).stream().reduce(Comparator::thenComparing).orElse(Comparator.comparing(FileInfo::getPath));
 
-        try (Stream<Path> stream = Files.walk(Path.of(URI.create(path)), 1)) {
+        try (Stream<Path> stream = Files.walk(asPath(path), 1)) {
             return Flowable.fromIterable(stream
                     .map((Path::toFile))
                     .map(file -> new FileInfo(file.getName(), file.getPath(), file.lastModified(), file.isDirectory()))
                     .sorted(comparator)
                     .collect(Collectors.toList()));
+        } catch (NoSuchFileException e) {
+            return Flowable.empty();
         }
     }
 
     @Override
     public SeekableByteChannel read(String path) throws IOException {
-        return Files.newByteChannel(Path.of(URI.create(path)), StandardOpenOption.READ);
+        return Files.newByteChannel(asPath(path), StandardOpenOption.READ);
     }
 
     @Override
     public SeekableByteChannel write(String path) throws IOException {
-        Path filePath = Path.of(URI.create(path));
+        Path filePath = asPath(path);
         Files.createDirectories(filePath.getParent()); //Create sub directories
         return Files.newByteChannel(filePath, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
     }
 
     @Override
     public void write(String path, byte[] content) throws IOException {
-        Files.write(Path.of(URI.create(path)), content, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+        Files.write(asPath(path), content, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
     }
 
     @Override
     public void move(String from, String to) throws IOException {
-        Path target = Path.of(URI.create(to));
+        Path target = asPath(to);
         Files.createDirectories(target.getParent()); //Create sub directories
-        Files.move(Path.of(URI.create(from)), target, StandardCopyOption.ATOMIC_MOVE);
+        Files.move(asPath(from), target, StandardCopyOption.ATOMIC_MOVE);
     }
 
     @Override
     public void delete(String path) throws IOException {
-        Files.delete(Path.of(URI.create(path)));
+        Files.delete(asPath(path));
+    }
+
+    private static Path asPath(String path) {
+        String pathWithScheme = path;
+        if (!pathWithScheme.startsWith("file:")) {
+            pathWithScheme = String.format("file:%s", pathWithScheme);
+        }
+        return Path.of(URI.create(pathWithScheme));
     }
 }

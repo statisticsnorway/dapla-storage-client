@@ -18,13 +18,13 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.channels.SeekableByteChannel;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Supplier;
 
 /**
  * DatasetStorageClient provides methods for reading and writing datasets
@@ -46,27 +46,55 @@ public class DatasetStorage {
     }
 
     /**
+     * Read all avro records in a dataset.
+     *
+     * @param datasetUri the dataset to read
+     * @return the records as a list of {@link GenericRecord}
+     */
+    public List<GenericRecord> readAvroRecords(DatasetUri datasetUri) {
+        List<GenericRecord> records = new ArrayList<>();
+        for (FileInfo file : listDatasetFiles(datasetUri)) {
+
+            SeekableByteChannel input;
+            try {
+                input = backend.read(file.getPath());
+            } catch (IOException e) {
+                throw new DatasetStorageException(String.format("Failed to read dataset file: \"%s\"", file.getPath()), e);
+            }
+
+            try (ParquetReader<GenericRecord> reader = provider.getAvroParquetReader(input)) {
+                GenericRecord record;
+                while ((record = reader.read()) != null) {
+                    records.add(record);
+                }
+            } catch (IOException e) {
+                throw new DatasetStorageException(String.format("Failed to read records from file: \"%s\"", file.getPath()), e);
+            }
+        }
+        return records;
+    }
+
+    /**
      * Write an unbounded sequence of {@link GenericRecord}s to a given dataset.
      * <p>
      * The records will be written in "batches" of size count or when the timespan duration elapsed. The last value of
      * each batch is returned in an {@link Observable}.
      * <p>
      *
-     * @param datasetUri        the dataset to write to.
-     * @param filenameGenerator a filename generator to invoke each time a file is flushed.
-     * @param records           the records to write.
-     * @param timeWindow        the period of time before a batch should be written.
-     * @param unit              the unit of time that applies to the timespan argument.
-     * @param countWindow       the maximum size of a batch before it should be written.
+     * @param datasetUri  the dataset to write to.
+     * @param records     the records to write.
+     * @param timeWindow  the period of time before a batch should be written.
+     * @param unit        the unit of time that applies to the timespan argument.
+     * @param countWindow the maximum size of a batch before it should be written.
      * @return an {@link Observable} emitting the last record in each batch.
      */
     public <R extends GenericRecord> Observable<R> writeDataUnbounded(
-            DatasetUri datasetUri, Supplier<String> filenameGenerator, Schema schema, Flowable<R> records, long timeWindow, TimeUnit unit, long countWindow
+            DatasetUri datasetUri, Schema schema, Flowable<R> records, long timeWindow, TimeUnit unit, long countWindow
     ) {
         return records
                 .window(timeWindow, unit, countWindow, true)
                 .switchMapMaybe(
-                        recordsWindow -> writeData(datasetUri, filenameGenerator.get(), schema, recordsWindow).lastElement()
+                        recordsWindow -> writeData(datasetUri, schema, recordsWindow).lastElement()
                 )
                 .toObservable();
     }
@@ -76,13 +104,12 @@ public class DatasetStorage {
      * <p>
      *
      * @param datasetUri the dataset to write to.
-     * @param filename   the name of the file in which to write.
      * @param schema     the schema used to create the records.
      * @param records    the records to write.
      * @return a completable that completes once the data is saved.
      */
-    public Completable writeAllData(DatasetUri datasetUri, String filename, Schema schema, Flowable<GenericRecord> records) {
-        return writeData(datasetUri, filename, schema, records).ignoreElements();
+    public Completable writeAllData(DatasetUri datasetUri, Schema schema, Flowable<GenericRecord> records) {
+        return writeData(datasetUri, schema, records).ignoreElements();
     }
 
     /**
@@ -90,18 +117,17 @@ public class DatasetStorage {
      * <p>
      *
      * @param datasetUri the dataset to write to.
-     * @param filename   the name of the file in which to write.
      * @param schema     the schema used to create the records.
      * @param records    the records to write.
      * @return a completable that completes once the data is saved.
      */
-    public <R extends GenericRecord> Flowable<R> writeData(DatasetUri datasetUri, String filename, Schema schema, Flowable<R> records) {
+    public <R extends GenericRecord> Flowable<R> writeData(DatasetUri datasetUri, Schema schema, Flowable<R> records) {
         return Flowable.defer(() -> {
-            DataWriter writer = new DataWriter(datasetUri, filename, schema);
+            DataWriter writer = new DataWriter(datasetUri, schema);
             return records
                     .doAfterNext(writer::write)
                     .doOnComplete(writer::close)
-                    .doOnError(throwable -> writer.cancel());
+                    .doOnError(throwable -> writer.close());
         });
     }
 
@@ -240,45 +266,66 @@ public class DatasetStorage {
     }
 
     /**
-     * Offers read, write and delete operations on records.
+     * Write avro records to parquet files
      */
-    public class DataWriter implements AutoCloseable {
+    class DataWriter implements AutoCloseable {
+
+        private final DatasetUri datasetUri;
+        private final Schema schema;
 
         // Full path - including filename - to the parquet file that will hold the records
-        private final String dataFile;
+        private String dataFile;
 
         // Full path - including filename - to a temporary file used to buffer records
-        private final String tmpFile;
-        private final ParquetWriter<GenericRecord> parquetWriter;
-        private final AtomicInteger writeCounter = new AtomicInteger(0);
+        private String tmpFile;
+        private ParquetWriter<GenericRecord> parquetWriter;
+        private AtomicInteger writeCounter;
 
-        private DataWriter(DatasetUri datasetUri, String filename, Schema schema) throws IOException {
-            String fullFileName = filename;
-            if (!fullFileName.endsWith(".parquet")) {
-                fullFileName = fullFileName + ".parquet";
-            }
-            this.tmpFile = datasetUri.getParentUri() + "/tmp/" + fullFileName;
+        private DataWriter(DatasetUri datasetUri, Schema schema) throws IOException {
+            this.datasetUri = datasetUri;
+            this.schema = schema;
+            initWriter();
+        }
+
+        private void initWriter() throws IOException {
+            String fileName = String.format("%d", System.currentTimeMillis());
+            this.tmpFile = datasetUri.getParentUri() + "/tmp/" + fileName;
 
             String pathToDataFile = datasetUri.toString();
             if (!pathToDataFile.endsWith("/")) {
                 pathToDataFile = pathToDataFile + "/";
             }
-            this.dataFile = pathToDataFile + fullFileName;
-            this.parquetWriter = provider.getWriter(backend.write(tmpFile), schema);
+            this.dataFile = pathToDataFile + fileName + ".parquet";
+            this.writeCounter = new AtomicInteger(0);
+
+            this.parquetWriter = provider.getWriter(backend.write(this.tmpFile), this.schema);
         }
 
         /**
-         * Write a record to storage as a parquet file.
+         * Write a record to a parquet file.
          * <p>
          * Note: The record could be buffered. {@link #close()} must be called afterwards to ensure persistence of all buffered records.
          *
-         * @param record the record to save.
+         * @param record the record to write.
          */
         public void write(GenericRecord record) {
-            writeCounter.incrementAndGet();
             try {
                 this.writeParquet(record);
+                writeCounter.incrementAndGet();
             } catch (Exception e) {
+
+                try {
+                    close();
+                } catch (IOException ioException) {
+                    throw new RuntimeException("Unable to close DataWriter", ioException);
+                }
+
+                try {
+                    initWriter();
+                } catch (IOException ioException) {
+                    throw new RuntimeException("Failed to reinitialize writer", ioException);
+                }
+
                 if (writeExceptionHandler != null) {
                     writeExceptionHandler.handleException(e, record).ifPresent(this::writeParquet);
                 } else {
@@ -330,5 +377,4 @@ public class DatasetStorage {
             }
         }
     }
-
 }

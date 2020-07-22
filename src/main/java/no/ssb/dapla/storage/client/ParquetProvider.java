@@ -3,6 +3,7 @@ package no.ssb.dapla.storage.client;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.parquet.avro.AvroParquetReader;
 import org.apache.parquet.avro.AvroParquetWriter;
 import org.apache.parquet.avro.AvroWriteSupport;
 import org.apache.parquet.example.data.Group;
@@ -37,6 +38,11 @@ public class ParquetProvider {
         this.pageSize = pageSize;
     }
 
+    public ParquetReader<GenericRecord> getAvroParquetReader(SeekableByteChannel input) throws IOException {
+        SeekableByteChannelInputFile inputFile = new SeekableByteChannelInputFile(input);
+        return AvroParquetReader.<GenericRecord>builder(inputFile).build();
+    }
+
     public ParquetReader<Group> getParquetGroupReader(SeekableByteChannel input, String readSchema) throws IOException {
         SeekableByteChannelInputFile inputFile = new SeekableByteChannelInputFile(input);
 
@@ -52,7 +58,8 @@ public class ParquetProvider {
         SeekableByteChannelOutputFile outputFile = new SeekableByteChannelOutputFile(output);
         Configuration conf = new Configuration();
         conf.setBoolean(AvroWriteSupport.WRITE_OLD_LIST_STRUCTURE, false);
-        return AvroParquetWriter.<GenericRecord>builder(outputFile).withSchema(schema)
+        return AvroParquetWriter.<GenericRecord>builder(outputFile)
+                .withSchema(schema)
                 .withConf(conf)
                 .withCompressionCodec(CompressionCodecName.SNAPPY)
                 .withPageSize(pageSize)
