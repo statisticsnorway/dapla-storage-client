@@ -12,12 +12,15 @@ import com.google.cloud.storage.BlobInfo;
 import com.google.cloud.storage.CopyWriter;
 import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageOptions;
+import io.reactivex.Completable;
 import io.reactivex.Flowable;
+import io.reactivex.Single;
 import no.ssb.dapla.storage.client.backend.BinaryBackend;
 import no.ssb.dapla.storage.client.backend.FileInfo;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
@@ -28,6 +31,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * A simple BinaryBackend for Google Cloud Storage.
@@ -95,6 +99,79 @@ public class GoogleCloudStorageBackend implements BinaryBackend {
         ReadChannel reader = blob.reader();
         reader.setChunkSize(readChunkSize);
         return new SeekableReadChannel(reader, readChunkSize, blob.getSize());
+    }
+
+    /**
+     * Write a stream of bytes to a blob.
+     * <p/>
+     * Example: Upload the contents of the file <code>file-to-upload</code> to the blob <code>gs://my-bucket/my-file</code>
+     * <pre>
+     * <code>
+     *
+     * GoogleCloudStorageBackend backend = new GoogleCloudStorageBackend();
+     *
+     * try (InputStream is = Files.newInputStream(Path.of("file-to-upload"))) {
+     *   backend.write("gs://my-bucket/my-file", is);
+     * }
+     * </code>
+     * </pre>
+     * @param path    a full path to the blob, including schema, e.g <i>gs://my-bucket/my-file</i>
+     * @param content a stream of bytes as a {@link InputStream}
+     * @throws IOException if an I/O error occurs
+     */
+    public void write(String path, InputStream content) throws IOException {
+        BlobInfo blobInfo = BlobInfo.newBuilder(getBlobId(path)).setContentType("text/plain").build();
+        try (WriteChannel channel = storage.writer(blobInfo)) {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = content.read(buffer)) != -1) {
+                channel.write(ByteBuffer.wrap(buffer, 0, read));
+                buffer = new byte[8192];
+            }
+        }
+    }
+
+    /**
+     * Asynchronously write a stream of byte arrays to a blob.
+     * <p/>
+     * Example: Upload the contents of the file <code>file-to-upload</code> to the blob <code>gs://my-bucket/my-file</code>
+     * <pre>
+     * <code>
+     *
+     * GoogleCloudStorageBackend backend = new GoogleCloudStorageBackend();
+     *
+     * try (InputStream is = Files.newInputStream(Path.of("file-to-upload"))) {
+     *
+     *   backend
+     *     .write("gs://my-bucket/my-file", Bytes.from(is))
+     *     .timeout(10, TimeUnit.SECONDS);
+     *     .blockingAwait();
+     * }
+     * </code>
+     * </pre>
+     *
+     * @param path    a full path to the blob, including schema, e.g <i>gs://my-bucket/my-file</i>
+     * @param content the stream as a {@link Flowable} of {@code byte[]}
+     * @return {@link Completable#complete()} if successful, {@link Completable#error(Throwable)} otherwise
+     */
+    public Completable write(String path, Flowable<byte[]> content) {
+        return Single
+                .fromCallable(() -> BlobInfo.newBuilder(getBlobId(path)).setContentType("text/plain").build())
+                .flatMapCompletable(blobInfo -> {
+                    final AtomicReference<Throwable> error = new AtomicReference<>(null);
+                    try (WriteChannel channel = storage.writer(blobInfo)) {
+                        content
+                                .subscribe(
+                                        bytes -> channel.write(ByteBuffer.wrap(bytes, 0, bytes.length)),
+                                        error::set
+                                );
+                    }
+                    Throwable throwable = error.get();
+                    if (throwable != null) {
+                        return Completable.error(throwable);
+                    }
+                    return Completable.complete();
+                });
     }
 
     @Override

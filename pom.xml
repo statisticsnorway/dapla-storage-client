@@ -68,9 +68,9 @@
         </dependency>
 
         <dependency>
-            <groupId>io.reactivex.rxjava2</groupId>
-            <artifactId>rxjava</artifactId>
-            <version>2.2.6</version>
+            <groupId>com.github.davidmoten</groupId>
+            <artifactId>rxjava2-extras</artifactId>
+            <version>0.1.38</version>
         </dependency>
 
         <dependency>
@@ -112,7 +112,7 @@
         <dependency>
             <groupId>com.google.cloud</groupId>
             <artifactId>google-cloud-storage</artifactId>
-            <version>1.108.0</version>
+            <version>1.111.2</version>
             <exclusions>
                 <exclusion>
                     <artifactId>guava</artifactId>
