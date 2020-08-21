@@ -1,3 +1,5 @@
+[![Build Status](https://dev.azure.com/statisticsnorway/Dapla/_apis/build/status/statisticsnorway.dapla-storage-client?branchName=master)](https://dev.azure.com/statisticsnorway/Dapla/_build/latest?definitionId=58&branchName=master)
+
 # Dapla Storage Client
 
 <!-- TABLE OF CONTENTS -->
