@@ -4,6 +4,8 @@ import io.reactivex.Completable;
 import io.reactivex.Flowable;
 import io.reactivex.Observable;
 import no.ssb.dapla.dataset.uri.DatasetUri;
+import no.ssb.dapla.parquet.FieldInterceptor;
+import no.ssb.dapla.parquet.RecordStream;
 import no.ssb.dapla.storage.client.backend.BinaryBackend;
 import no.ssb.dapla.storage.client.backend.FileInfo;
 import org.apache.avro.Schema;
@@ -21,8 +23,10 @@ import java.nio.channels.SeekableByteChannel;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -221,6 +225,52 @@ public class DatasetStorage {
         } catch (Exception e) {
             throw new DatasetStorageException(String.format("Failed to read parquet file in path '%s'", filePath), e);
         }
+    }
+
+    public Flowable<Map<String, Object>> readParquetRecords(DatasetUri datasetUri, Set<String> fieldSelectors, FieldInterceptor fieldInterceptor) {
+        // Find dataset files
+        List<FileInfo> files = listDatasetFiles(datasetUri);
+        if (files.isEmpty()) {
+            return Flowable.empty();
+        }
+
+        // Create a record stream for each dataset file and merge them into one
+        Flowable<Map<String, Object>> previous = null;
+        for (FileInfo file : files) {
+            Flowable<Map<String, Object>> records = readParquetRecords(file.getPath(), fieldSelectors, fieldInterceptor);
+            if (previous == null) {
+                previous = records;
+                continue;
+            }
+            previous = previous.mergeWith(records);
+        }
+        return previous;
+    }
+
+    public Flowable<Map<String, Object>> readParquetRecords(String filePath, Set<String> fieldSelectors, FieldInterceptor fieldInterceptor) {
+        return Flowable.generate(
+                () -> {
+                    SeekableByteChannel channel = backend.read(filePath);
+                    return RecordStream.builder(channel).withFieldSelectors(fieldSelectors).withFieldInterceptor(fieldInterceptor).build();
+                }, (stream, emitter) -> {
+                    Map<String, Object> record;
+                    try {
+                        record = stream.read();
+                    } catch (Exception e) {
+                        emitter.onError(e);
+                        emitter.onComplete();
+                        stream.close();
+                        return;
+                    }
+                    if (record == null) {
+                        emitter.onComplete();
+                        stream.close();
+                        return;
+                    }
+                    emitter.onNext(record);
+                },
+                RecordStream::close
+        );
     }
 
     /**

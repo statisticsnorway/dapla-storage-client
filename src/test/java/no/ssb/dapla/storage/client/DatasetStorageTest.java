@@ -1,5 +1,6 @@
 package no.ssb.dapla.storage.client;
 
+import com.google.common.collect.ImmutableSet;
 import io.reactivex.Flowable;
 import io.reactivex.Observable;
 import no.ssb.dapla.dataset.uri.DatasetUri;
@@ -11,6 +12,7 @@ import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.generic.GenericRecordBuilder;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.parquet.example.data.simple.SimpleGroup;
 import org.apache.parquet.io.InvalidRecordException;
 import org.apache.parquet.schema.MessageType;
@@ -31,8 +33,10 @@ import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -96,6 +100,40 @@ class DatasetStorageTest {
     @AfterEach
     void tearDown() throws IOException {
         FileUtils.deleteDirectory(testDir.toFile());
+    }
+
+    @Test
+    void thatReadParquetRecordsWorks() {
+        DatasetStorage client = DatasetStorage.builder().withBinaryBackend(new LocalBackend()).build();
+
+        /*
+        Dataset made up of two dataset files, each containing 100 records. Schema:
+        message root {
+          required group person {
+            required binary id (UTF8);
+          }
+          optional group addresses (LIST) {
+            repeated group array {
+              required binary streetName (UTF8);
+            }
+          }
+        }
+        The field streetName contains values ranging from 'Duckburg Lane 0' through 'Duckburg Lane 199'
+         */
+        DatasetUri uri = DatasetUri.of(Path.of("src/test/resources").toUri().toString(), "data/simple-person", "v1");
+
+        // Read all streetName fields and extract street number from them
+        Set<Object> streetNumbers = ImmutableSet.copyOf(
+                client.readParquetRecords(uri, Set.of("/addresses/streetName"), (field, value) -> StringUtils.getDigits(value))
+                        .map(record -> {
+                            assertThat(record).containsOnlyKeys("addresses");
+                            return (String) ((List<Map<String, Object>>) record.get("addresses")).get(0).get("streetName");
+                        })
+                        .blockingIterable()
+        );
+
+        assertThat(streetNumbers).hasSize(200);
+        assertThat(streetNumbers).contains("0", "199");
     }
 
     @Test

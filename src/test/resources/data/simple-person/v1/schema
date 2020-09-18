@@ -1,0 +1,10 @@
+message root {
+  required group person {
+    required binary id (UTF8);
+  }
+  optional group addresses (LIST) {
+    repeated group array {
+      required binary streetName (UTF8);
+    }
+  }
+}

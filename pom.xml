@@ -6,6 +6,12 @@
     <artifactId>dapla-storage-client</artifactId>
     <version>4.1.1-SNAPSHOT</version>
 
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <jdk.version>15</jdk.version>
+    </properties>
+
     <scm>
         <connection>scm:git:git://github.com/statisticsnorway/dapla-storage-client.git</connection>
         <developerConnection>scm:git:git@github.com:statisticsnorway/dapla-storage-client.git</developerConnection>
@@ -19,6 +25,12 @@
             <groupId>no.ssb.dapla</groupId>
             <artifactId>dataset-uri</artifactId>
             <version>0.1</version>
+        </dependency>
+
+        <dependency>
+            <groupId>no.ssb.dapla.parquet</groupId>
+            <artifactId>parquet-buddy</artifactId>
+            <version>0.2.1-SNAPSHOT</version>
         </dependency>
 
         <dependency>
@@ -81,14 +93,8 @@
 
         <dependency>
             <groupId>org.apache.parquet</groupId>
-            <artifactId>parquet-avro</artifactId>
-            <version>1.10.1</version>
-        </dependency>
-
-        <dependency>
-            <groupId>org.apache.parquet</groupId>
             <artifactId>parquet-hadoop</artifactId>
-            <version>1.10.1</version>
+            <version>1.11.0</version>
         </dependency>
 
         <dependency>
@@ -184,10 +190,7 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.8.1</version>
                 <configuration>
-                    <source>11</source>
-                    <release>11</release>
-                    <meminitial>64m</meminitial>
-                    <maxmem>512m</maxmem>
+                    <release>${jdk.version}</release>
                 </configuration>
             </plugin>
             <plugin>
