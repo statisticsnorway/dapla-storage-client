@@ -4,7 +4,7 @@
 
     <groupId>no.ssb.dapla.storage</groupId>
     <artifactId>dapla-storage-client</artifactId>
-    <version>4.1.1-SNAPSHOT</version>
+    <version>4.2.0</version>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -16,7 +16,7 @@
         <connection>scm:git:git://github.com/statisticsnorway/dapla-storage-client.git</connection>
         <developerConnection>scm:git:git@github.com:statisticsnorway/dapla-storage-client.git</developerConnection>
         <url>https://github.com/statisticsnorway/dapla-storage-client</url>
-        <tag>HEAD</tag>
+        <tag>dapla-storage-client-4.2.0</tag>
     </scm>
 
     <dependencies>
