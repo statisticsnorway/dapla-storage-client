@@ -49,44 +49,45 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class DatasetStorageTest {
 
-    private static final Schema SCHEMA = new Schema.Parser().parse("{\n" +
-            "  \"type\": \"record\",\n" +
-            "  \"name\": \"root\",\n" +
-            "  \"namespace\": \"no.ssb.dataset\",\n" +
-            "  \"doc\": \"...\",\n" +
-            "  \"fields\": [\n" +
-            "    {\n" +
-            "      \"name\": \"string\",\n" +
-            "      \"type\": \"string\",\n" +
-            "      \"doc\": \"A string\"\n" +
-            "    },\n" +
-            "    {\n" +
-            "      \"name\": \"int\",\n" +
-            "      \"type\": \"int\",\n" +
-            "      \"doc\": \"An int\"\n" +
-            "    },\n" +
-            "    {\n" +
-            "      \"name\": \"boolean\",\n" +
-            "      \"type\": \"boolean\",\n" +
-            "      \"doc\": \"A boolean\"\n" +
-            "    },\n" +
-            "    {\n" +
-            "      \"name\": \"float\",\n" +
-            "      \"type\": \"float\",\n" +
-            "      \"doc\": \"A float\"\n" +
-            "    },\n" +
-            "    {\n" +
-            "      \"name\": \"long\",\n" +
-            "      \"type\": \"long\",\n" +
-            "      \"doc\": \"A long\"\n" +
-            "    },\n" +
-            "    {\n" +
-            "      \"name\": \"double\",\n" +
-            "      \"type\": \"double\",\n" +
-            "      \"doc\": \"A double\"\n" +
-            "    }\n" +
-            "  ]\n" +
-            "}");
+    private static final Schema SCHEMA = new Schema.Parser().parse("""
+            {
+              "type": "record",
+              "name": "root",
+              "namespace": "no.ssb.dataset",
+              "doc": "...",
+              "fields": [
+                {
+                  "name": "string",
+                  "type": "string",
+                  "doc": "A string"
+                },
+                {
+                  "name": "int",
+                  "type": "int",
+                  "doc": "An int"
+                },
+                {
+                  "name": "boolean",
+                  "type": "boolean",
+                  "doc": "A boolean"
+                },
+                {
+                  "name": "float",
+                  "type": "float",
+                  "doc": "A float"
+                },
+                {
+                  "name": "long",
+                  "type": "long",
+                  "doc": "A long"
+                },
+                {
+                  "name": "double",
+                  "type": "double",
+                  "doc": "A double"
+                }
+              ]
+            }""");
 
     private GenericRecordBuilder recordBuilder;
     private Path testDir;
@@ -141,23 +142,24 @@ class DatasetStorageTest {
         /*
         Schema with array that doesn't allow null values
          */
-        Schema schema = new Schema.Parser().parse("{\n" +
-                "  \"type\": \"record\",\n" +
-                "  \"name\": \"person\",\n" +
-                "  \"fields\": [\n" +
-                "    {\n" +
-                "      \"name\": \"address\",\n" +
-                "      \"type\": [\n" +
-                "        \"null\",\n" +
-                "        {\n" +
-                "          \"type\": \"array\",\n" +
-                "          \"items\": \"string\"\n" +
-                "        }\n" +
-                "      ],\n" +
-                "      \"default\": null\n" +
-                "    }\n" +
-                "  ]\n" +
-                "}");
+        Schema schema = new Schema.Parser().parse("""
+                {
+                  "type": "record",
+                  "name": "person",
+                  "fields": [
+                    {
+                      "name": "address",
+                      "type": [
+                        "null",
+                        {
+                          "type": "array",
+                          "items": "string"
+                        }
+                      ],
+                      "default": null
+                    }
+                  ]
+                }""");
 
         //Trigger exception by attempting to write a record with null value in array
         Flowable<GenericData.Record> records = asFlowable(
@@ -198,23 +200,24 @@ class DatasetStorageTest {
         /*
         Schema with array that doesn't allow null values
          */
-        Schema schema = new Schema.Parser().parse("{\n" +
-                "  \"type\": \"record\",\n" +
-                "  \"name\": \"person\",\n" +
-                "  \"fields\": [\n" +
-                "    {\n" +
-                "      \"name\": \"address\",\n" +
-                "      \"type\": [\n" +
-                "        \"null\",\n" +
-                "        {\n" +
-                "          \"type\": \"array\",\n" +
-                "          \"items\": \"string\"\n" +
-                "        }\n" +
-                "      ],\n" +
-                "      \"default\": null\n" +
-                "    }\n" +
-                "  ]\n" +
-                "}");
+        Schema schema = new Schema.Parser().parse("""
+                {
+                  "type": "record",
+                  "name": "person",
+                  "fields": [
+                    {
+                      "name": "address",
+                      "type": [
+                        "null",
+                        {
+                          "type": "array",
+                          "items": "string"
+                        }
+                      ],
+                      "default": null
+                    }
+                  ]
+                }""");
 
         //Trigger exception by attempting to write a record with null value in array
         Flowable<GenericData.Record> records = asFlowable(
@@ -248,23 +251,24 @@ class DatasetStorageTest {
         /*
         Schema with array that doesn't allow null values
          */
-        Schema schema = new Schema.Parser().parse("{\n" +
-                "  \"type\": \"record\",\n" +
-                "  \"name\": \"person\",\n" +
-                "  \"fields\": [\n" +
-                "    {\n" +
-                "      \"name\": \"address\",\n" +
-                "      \"type\": [\n" +
-                "        \"null\",\n" +
-                "        {\n" +
-                "          \"type\": \"array\",\n" +
-                "          \"items\": \"string\"\n" +
-                "        }\n" +
-                "      ],\n" +
-                "      \"default\": null\n" +
-                "    }\n" +
-                "  ]\n" +
-                "}");
+        Schema schema = new Schema.Parser().parse("""
+                {
+                  "type": "record",
+                  "name": "person",
+                  "fields": [
+                    {
+                      "name": "address",
+                      "type": [
+                        "null",
+                        {
+                          "type": "array",
+                          "items": "string"
+                        }
+                      ],
+                      "default": null
+                    }
+                  ]
+                }""");
 
         //Trigger exception by attempting to write a records with null values in array
         Flowable<GenericData.Record> records = asFlowable(
@@ -300,23 +304,24 @@ class DatasetStorageTest {
         /*
         Schema with array that doesn't allow null values
          */
-        Schema schema = new Schema.Parser().parse("{\n" +
-                "  \"type\": \"record\",\n" +
-                "  \"name\": \"person\",\n" +
-                "  \"fields\": [\n" +
-                "    {\n" +
-                "      \"name\": \"address\",\n" +
-                "      \"type\": [\n" +
-                "        \"null\",\n" +
-                "        {\n" +
-                "          \"type\": \"array\",\n" +
-                "          \"items\": \"string\"\n" +
-                "        }\n" +
-                "      ],\n" +
-                "      \"default\": null\n" +
-                "    }\n" +
-                "  ]\n" +
-                "}");
+        Schema schema = new Schema.Parser().parse("""
+                {
+                  "type": "record",
+                  "name": "person",
+                  "fields": [
+                    {
+                      "name": "address",
+                      "type": [
+                        "null",
+                        {
+                          "type": "array",
+                          "items": "string"
+                        }
+                      ],
+                      "default": null
+                    }
+                  ]
+                }""");
 
         //Trigger exception by attempting to write a records with null values in array
         Flowable<GenericData.Record> records = asFlowable(
